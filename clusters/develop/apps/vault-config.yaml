@@ -1,0 +1,25 @@
+# Vault platform config (ingress + OIDC bootstrap job).
+# Runs after Authentik is up (sync-wave 4) so the OIDC bootstrap job can
+# read Authentik provider credentials via ESO.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/nexora/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/vault
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

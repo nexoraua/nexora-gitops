@@ -1,0 +1,70 @@
+# Vault UI exposed via Traefik on vault-dev.nexora.example.
+# Cloudflare Access sits in front (group: infra-ops, WARP enrolled);
+# Cloudflare configuration lives in nexora-infra/modules/cloudflare/access.tf
+# (Terraform). This manifest only handles the cluster-side IngressRoute
+# and the cert-manager Certificate.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vault-ui
+  namespace: vault-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`vault-dev.nexora.example`)
+      kind: Rule
+      middlewares:
+        - name: cloudflare-jwt-assertion
+          namespace: traefik
+      services:
+        - name: vault
+          port: 8200
+          scheme: https
+          serversTransport: vault-tls
+  tls:
+    secretName: vault-ui-tls
+---
+# Hand-off TLS termination to Traefik; Vault pod still listens on HTTPS
+# internally (vault-tls secret), so we explicitly trust the cluster CA.
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: vault-tls
+  namespace: vault-system
+spec:
+  serverName: vault.vault-system.svc
+  rootCAsSecrets:
+    - vault-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ui-tls
+  namespace: vault-system
+spec:
+  secretName: vault-ui-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: vault-dev.nexora.example
+  dnsNames:
+    - vault-dev.nexora.example
+  duration: 2160h     # 90 days
+  renewBefore: 360h   # 15 days
+---
+# Validates the Cf-Access-Jwt-Assertion header issued by Cloudflare Access.
+# Without this middleware anyone with a direct cluster IP can hit the UI
+# bypassing CF Access — Authenticated Origin Pulls help on the LB side but
+# defense in depth at the ingress is cheap.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cloudflare-jwt-assertion
+  namespace: traefik
+spec:
+  forwardAuth:
+    address: http://cf-access-validator.traefik.svc:8080/verify
+    trustForwardHeader: true
+    authResponseHeaders:
+      - X-Cf-Access-Authenticated-User-Email
