@@ -1,0 +1,29 @@
+# CloudNativePG cluster for business data (Identity, Wallet, Investments,
+# Contracts, FOP, Audit). Single 2-instance cluster on develop; production
+# is 3 instances with sync replication FSN1↔NBG1 + async standby HEL1.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-business
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/nexora/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/stateful/postgresql
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgresql
+  syncPolicy:
+    automated:
+      prune: false   # never auto-prune Postgres
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

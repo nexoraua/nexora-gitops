@@ -1,0 +1,75 @@
+# Authentik central IdP — OIDC for admin app, ArgoCD, Grafana, vmui,
+# Linkerd Viz, RabbitMQ Management. Upstream OIDC source: Google Workspace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: apps
+  source:
+    repoURL: https://charts.goauthentik.io
+    chart: authentik
+    targetRevision: 2024.10.*
+    helm:
+      values: |
+        global:
+          envFrom:
+            - secretRef:
+                name: authentik-bootstrap
+        authentik:
+          error_reporting:
+            enabled: false
+          postgresql:
+            host: nexora-authentik-develop-rw.authentik.svc
+            name: authentik
+            user: authentik
+            password: ${POSTGRES_PASSWORD}
+          redis:
+            host: authentik-cache.authentik.svc
+        server:
+          replicas: 1
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - auth-dev.nexora.example
+            tls:
+              - secretName: authentik-tls
+                hosts:
+                  - auth-dev.nexora.example
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        worker:
+          replicas: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        postgresql:
+          enabled: false   # provided by CloudNativePG (clusters/develop/stateful/authentik/)
+        redis:
+          enabled: false   # provided by Dragonfly (apps/dragonfly-cache.yaml)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,57 @@
+# Grafana Alloy — unified OTel telemetry collector (DaemonSet per node).
+# Replaces previous mix of vmagent client + Promtail + OTel Collector.
+# Forwards:
+#   - metrics  → vminsert (VictoriaMetrics)
+#   - logs     → Loki
+#   - traces   → Tempo
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 0.*.*
+    helm:
+      values: |
+        controller:
+          type: daemonset
+        alloy:
+          mounts:
+            varlog: true     # tail container logs
+            dockercontainers: true
+          configMap:
+            create: false
+            name: alloy-config   # provided by clusters/develop/platform/alloy/
+          extraPorts:
+            - name: otlp-grpc
+              port: 4317
+              targetPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              port: 4318
+              targetPort: 4318
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+        crds:
+          create: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

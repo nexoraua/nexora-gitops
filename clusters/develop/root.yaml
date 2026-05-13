@@ -1,0 +1,26 @@
+# Root Application for develop cluster — app-of-apps pattern.
+# Apply once with: kubectl apply -n argocd -f clusters/develop/root.yaml
+# All other Applications are managed by this one through clusters/develop/apps/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: develop-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nexora/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

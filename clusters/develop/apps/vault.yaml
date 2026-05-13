@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  annotations:
+    # Vault first — everything else uses External Secrets via Vault backend.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: apps
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.28.*
+    helm:
+      values: |
+        global:
+          tlsDisable: false
+        server:
+          ha:
+            enabled: true
+            replicas: 3
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+                listener "tcp" {
+                  tls_disable = 0
+                  address = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                  tls_cert_file = "/vault/userconfig/vault-tls/tls.crt"
+                  tls_key_file  = "/vault/userconfig/vault-tls/tls.key"
+                }
+                storage "raft" {
+                  path = "/vault/data"
+                  retry_join {
+                    leader_api_addr = "https://vault-0.vault-internal:8200"
+                  }
+                  retry_join {
+                    leader_api_addr = "https://vault-1.vault-internal:8200"
+                  }
+                  retry_join {
+                    leader_api_addr = "https://vault-2.vault-internal:8200"
+                  }
+                }
+                service_registration "kubernetes" {}
+                # Auto-unseal on develop is via Shamir keys held by ops in
+                # 1Password. Production wires this up to an HSM or another
+                # KMS once available.
+          dataStorage:
+            enabled: true
+            size: 10Gi
+            storageClass: hcloud-volumes
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          extraEnvironmentVars:
+            VAULT_CACERT: /vault/userconfig/vault-tls/ca.crt
+          volumes:
+            - name: vault-tls
+              secret:
+                secretName: vault-tls
+          volumeMounts:
+            - mountPath: /vault/userconfig/vault-tls
+              name: vault-tls
+              readOnly: true
+        ui:
+          enabled: true
+          serviceType: ClusterIP
+        injector:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault-system
+  syncPolicy:
+    automated:
+      prune: false  # never auto-prune Vault — manual approval only
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

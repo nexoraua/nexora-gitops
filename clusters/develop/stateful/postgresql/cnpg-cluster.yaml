@@ -1,0 +1,80 @@
+# Business PostgreSQL 18 cluster for develop.
+# Schemas per bounded context — identity, wallet, investments, contracts,
+# notifications, fop, audit, quartz (Quartz.NET state).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-business-develop
+  namespace: postgresql
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-superuser
+  storage:
+    storageClass: hcloud-volumes
+    size: 20Gi
+  walStorage:
+    storageClass: hcloud-volumes
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "768MB"
+      work_mem: "16MB"
+      wal_level: "logical"          # for future CDC to ClickHouse
+      pg_stat_statements.track: "all"
+    pg_hba:
+      - host all all 10.40.0.0/16 scram-sha-256
+    shared_preload_libraries:
+      - pg_stat_statements
+      - pgaudit
+  monitoring:
+    enablePodMonitor: true
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://nexora-develop-cnpg-backups/business
+      endpointURL: https://fsn1.your-objectstorage.com
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-business-s3-backup
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-business-s3-backup
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+        immediateCheckpoint: false
+    retentionPolicy: "30d"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-business-develop-daily
+  namespace: postgresql
+spec:
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-business-develop

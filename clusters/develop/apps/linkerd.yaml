@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://linkerd.github.io/linkerd2
+    chart: linkerd-control-plane
+    targetRevision: 2024.*.*
+    helm:
+      values: |
+        identity:
+          issuer:
+            scheme: kubernetes.io/tls
+        proxy:
+          resources:
+            cpu:
+              request: 50m
+              limit: 200m
+            memory:
+              request: 64Mi
+              limit: 128Mi
+        controllerReplicas: 2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: linkerd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged   # linkerd needs cap_net_admin
+        config.linkerd.io/admission-webhooks: disabled
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

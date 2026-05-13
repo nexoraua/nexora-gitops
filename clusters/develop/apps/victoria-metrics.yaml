@@ -1,0 +1,85 @@
+# VictoriaMetrics cluster — primary metrics backend, 13-month retention.
+# Receives remote_write from Prometheus (system metrics) and from
+# Grafana Alloy (app OTLP metrics + scrape targets).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-metrics
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: observability
+  source:
+    repoURL: https://victoriametrics.github.io/helm-charts
+    chart: victoria-metrics-k8s-stack
+    targetRevision: 0.*.*
+    helm:
+      values: |
+        # Disable bundled chart components we replace with explicit configs
+        # or do not need on develop.
+        grafana:
+          enabled: false
+        alertmanager:
+          enabled: true
+        kubeStateMetrics:
+          enabled: false      # provided by kube-prometheus-stack
+        nodeExporter:
+          enabled: false      # provided by kube-prometheus-stack
+        defaultRules:
+          create: true
+        vmcluster:
+          enabled: true
+          spec:
+            retentionPeriod: "13"
+            replicationFactor: 1     # develop: single-replica; prod uses 2
+            vmstorage:
+              replicaCount: 1
+              storage:
+                volumeClaimTemplate:
+                  storageClassName: hcloud-volumes
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 20Gi
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  memory: 1Gi
+            vmselect:
+              replicaCount: 1
+              cacheMountPath: /select-cache
+              storage:
+                volumeClaimTemplate:
+                  storageClassName: hcloud-volumes
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 5Gi
+            vminsert:
+              replicaCount: 1
+        vmagent:
+          enabled: false       # replaced by Grafana Alloy on Nexora
+        vmalert:
+          enabled: true
+          spec:
+            datasource:
+              url: "http://vmselect-vm.monitoring.svc:8481/select/0/prometheus/"
+            notifier:
+              url: "http://vmalertmanager-vm.monitoring.svc:9093/"
+        vmsingle:
+          enabled: false       # vmcluster mode
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

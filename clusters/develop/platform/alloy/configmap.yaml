@@ -1,0 +1,88 @@
+# Grafana Alloy config — unified telemetry pipeline.
+# Apps push OTLP (gRPC :4317, HTTP :4318); Alloy also scrapes
+# Prometheus-annotated pods and tails container logs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: monitoring
+data:
+  config.alloy: |
+    logging {
+      level  = "info"
+      format = "json"
+    }
+
+    // ---------- METRICS ----------
+    prometheus.remote_write "vm" {
+      endpoint {
+        url = "http://vminsert-vm.monitoring.svc:8480/insert/0/prometheus/api/v1/write"
+      }
+    }
+
+    otelcol.receiver.otlp "default" {
+      grpc {
+        endpoint = "0.0.0.0:4317"
+      }
+      http {
+        endpoint = "0.0.0.0:4318"
+      }
+      output {
+        metrics = [otelcol.processor.batch.metrics.input]
+        logs    = [otelcol.processor.batch.logs.input]
+        traces  = [otelcol.processor.batch.traces.input]
+      }
+    }
+
+    otelcol.processor.batch "metrics" {
+      output {
+        metrics = [otelcol.exporter.prometheus.vm.input]
+      }
+    }
+
+    otelcol.exporter.prometheus "vm" {
+      forward_to = [prometheus.remote_write.vm.receiver]
+    }
+
+    // ---------- LOGS ----------
+    otelcol.processor.batch "logs" {
+      output {
+        logs = [otelcol.exporter.loki.default.input]
+      }
+    }
+
+    otelcol.exporter.loki "default" {
+      forward_to = [loki.write.default.receiver]
+    }
+
+    loki.write "default" {
+      endpoint {
+        url = "http://loki-gateway.monitoring.svc/loki/api/v1/push"
+      }
+    }
+
+    // Tail container logs (kubelet) and ship to Loki.
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+
+    loki.source.kubernetes "pods" {
+      targets    = discovery.kubernetes.pods.targets
+      forward_to = [loki.write.default.receiver]
+    }
+
+    // ---------- TRACES ----------
+    otelcol.processor.batch "traces" {
+      output {
+        traces = [otelcol.exporter.otlp.tempo.input]
+      }
+    }
+
+    otelcol.exporter.otlp "tempo" {
+      client {
+        endpoint = "tempo-distributor.monitoring.svc:4317"
+        tls {
+          insecure = true
+        }
+      }
+    }

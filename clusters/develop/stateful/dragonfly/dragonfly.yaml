@@ -1,0 +1,29 @@
+# Dragonfly cluster — Redis-compatible cache + idempotency + refresh
+# whitelist + rate limit buckets for Nexora.Api and Nexora.Admin.
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: nexora-cache
+  namespace: dragonfly
+spec:
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.24.0
+  replicas: 1                      # develop: single instance
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  args:
+    - --maxmemory=768mb
+    - --proactor_threads=2
+    - --snapshot_cron=0 */6 * * *   # snapshot every 6h
+    - --dir=/data
+  snapshot:
+    cron: "0 */6 * * *"
+    persistentVolumeClaimSpec:
+      storageClassName: hcloud-volumes
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
