@@ -1,0 +1,23 @@
+# linstor-r1 — develop StorageClass. autoPlace: 1 means LINSTOR
+# allocates a single replica on the node where the consumer pod lands.
+# No DRBD replication, native-local IOPS.
+# Staging/production gets linstor-r2 / linstor-r3 with autoPlace 2/3
+# and DRBD replication kicked in.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-r1
+  # Not set as default yet — hcloud-volumes remains default until we
+  # finish migrating all develop workloads. Flip the annotations in a
+  # later commit alongside removing hcloud-volumes' default flag.
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: linstor.csi.linbit.com
+parameters:
+  linstor.csi.linbit.com/storagePool: pool0
+  linstor.csi.linbit.com/autoPlace: "1"
+  linstor.csi.linbit.com/resourceGroup: linstor-r1
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain   # avoid accidental data loss during testing
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

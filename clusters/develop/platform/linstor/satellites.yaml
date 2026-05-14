@@ -1,0 +1,52 @@
+# Per-nodepool LinstorSatelliteConfiguration — each carves out a
+# filesystem-backed thin-provisioned LINSTOR storage pool sized for
+# that pool's role. Files live under /var/lib/piraeus-datastore on
+# every satellite node; Talos persists that directory across reboots
+# in its EPHEMERAL partition.
+#
+# Why fileThin instead of file: sparse-allocation lets us over-commit
+# the pool (PVCs request more than the file space actually used).
+# Reality check at run time stays bounded by the directory size, so
+# we still need to right-size pool capacity per nodepool.
+---
+# workers (cx33, ~74 GB ephemeral) — 50 GB for app workloads.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-workers
+spec:
+  nodeSelector:
+    nodepool: workers
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+# system pool (cx33, ~74 GB) — 50 GB for platform infra workloads
+# (Vault stays on hcloud-volumes per design, so this is mostly
+# Dragonfly + ESO temp + future system-pinned PVCs).
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-system
+spec:
+  nodeSelector:
+    nodepool: system
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+# stateful pool (cx43, ~93 GB) — 60 GB for CNPG clusters + VM /
+# Loki / Tempo / Prometheus data.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-stateful
+spec:
+  nodeSelector:
+    nodepool: database
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
