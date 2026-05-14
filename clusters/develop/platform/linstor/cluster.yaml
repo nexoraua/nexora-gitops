@@ -1,11 +1,33 @@
-# LinstorCluster — declares the LINSTOR controller + CSI deployments.
-# Per-node satellite placement is controlled by LinstorSatelliteConfiguration
-# (satellites.yaml) — that's where nodepool selectors + tolerations live.
+# LinstorCluster — declares the LINSTOR controller + CSI deployments
+# AND the satellite DaemonSet template via top-level nodeSelector /
+# tolerations.
+#
+# nodeSelector picks which nodes get a satellite; tolerations are
+# applied to every satellite pod regardless of which
+# LinstorSatelliteConfiguration matches that node.
 apiVersion: piraeus.io/v1
 kind: LinstorCluster
 metadata:
   name: linstorcluster
 spec:
+  # Schedule satellites on every linux node — the per-pool
+  # LinstorSatelliteConfigurations decide which storage pool each
+  # satellite gets.
+  nodeSelector:
+    kubernetes.io/os: linux
+  # Tolerate the system + database nodepool taints so satellites can
+  # land on stateful-1 / system-1. The control-plane keeps its own
+  # taint and gets no satellite (the LinstorCluster spec doesn't
+  # tolerate node-role.kubernetes.io/control-plane).
+  tolerations:
+    - key: nodepool
+      operator: Equal
+      value: system
+      effect: NoSchedule
+    - key: nodepool
+      operator: Equal
+      value: database
+      effect: NoSchedule
   # Pin the LINSTOR controller to the system nodepool.
   controller:
     podTemplate:
