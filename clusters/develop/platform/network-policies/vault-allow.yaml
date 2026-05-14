@@ -102,25 +102,16 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # API server: Cilium runs in kube-proxy-less mode, so the destination
-    # is the apiserver pod IPs. Easiest portable allow is "any ipBlock
-    # outside the cluster CIDR, port 443" — but here we just open 6443/443
-    # to anywhere; Cilium HostFirewall + Hetzner firewall already
-    # constrain the actual surface.
+    # Kubernetes API for service_registration "kubernetes" — both the
+    # ClusterIP (10.40.8.1:443) and the control-plane pod endpoint
+    # (10.40.1.101:6443) live inside the Hetzner private CIDR, so we
+    # must allow that range explicitly. The Hetzner firewall and Cilium
+    # HostFirewall constrain external exposure separately.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            except:
-              - 10.40.0.0/16
       ports:
         - port: 443
           protocol: TCP
         - port: 6443
-          protocol: TCP
-    # Kubernetes API service ClusterIP (in-cluster path).
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - port: 443
           protocol: TCP
