@@ -19,7 +19,7 @@ spec:
       secret:
         name: authentik-postgres-credentials
   storage:
-    storageClass: hcloud-volumes
+    storageClass: linstor-r1
     size: 10Gi
   resources:
     requests:

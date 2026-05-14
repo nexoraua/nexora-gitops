@@ -44,7 +44,7 @@ spec:
           replicas: 1
           persistence:
             enabled: true
-            storageClass: hcloud-volumes
+            storageClass: linstor-r1
             size: 20Gi
           resources:
             requests:

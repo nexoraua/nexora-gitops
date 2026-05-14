@@ -25,7 +25,7 @@ spec:
           retention: 168h     # 7 days on develop; prod retention is 30d
         persistence:
           enabled: true
-          storageClass: hcloud-volumes
+          storageClass: linstor-r1
           size: 20Gi
         resources:
           requests:

@@ -15,7 +15,7 @@ spec:
     limits:
       memory: 1Gi
   persistence:
-    storageClassName: hcloud-volumes
+    storageClassName: linstor-r1
     storage: 10Gi
   rabbitmq:
     additionalConfig: |

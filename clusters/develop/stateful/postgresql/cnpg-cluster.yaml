@@ -14,10 +14,10 @@ spec:
   superuserSecret:
     name: cnpg-superuser
   storage:
-    storageClass: hcloud-volumes
+    storageClass: linstor-r1
     size: 20Gi
   walStorage:
-    storageClass: hcloud-volumes
+    storageClass: linstor-r1
     size: 5Gi
   resources:
     requests:

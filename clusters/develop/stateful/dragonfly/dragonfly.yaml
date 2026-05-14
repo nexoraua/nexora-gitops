@@ -22,7 +22,7 @@ spec:
   snapshot:
     cron: "0 */6 * * *"
     persistentVolumeClaimSpec:
-      storageClassName: hcloud-volumes
+      storageClassName: linstor-r1
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:

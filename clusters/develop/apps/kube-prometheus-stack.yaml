@@ -39,7 +39,7 @@ spec:
             storageSpec:
               volumeClaimTemplate:
                 spec:
-                  storageClassName: hcloud-volumes
+                  storageClassName: linstor-r1
                   accessModes: ["ReadWriteOnce"]
                   resources:
                     requests:
