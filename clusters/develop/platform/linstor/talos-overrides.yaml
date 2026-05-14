@@ -1,16 +1,18 @@
 # Talos-specific patches to the LINSTOR satellite DaemonSet.
 #
-# Talos breaks the upstream Piraeus satellite spec in three places:
+# 1. /run/systemd/system: Talos has no systemd. We pre-create that
+#    directory via the talos-run-systemd-mkdir DaemonSet (host-prep.yaml)
+#    so the satellite's hostPath.type=Directory mount succeeds.
 #
-# 1. /run/systemd/system hostPath — Talos has no systemd, the
-#    Directory type check fails and blocks every container in the pod.
-# 2. AppArmor — the upstream profile blocks CAP_SYS_MODULE on init
-#    containers. Annotate to run unconfined.
-# 3. drbd-module-loader needs to apply seLinuxOptions.type=spc_t —
-#    a CoreOS/Fedora type that Talos's SELinux policy doesn't define,
-#    so runc fails with "unable to apply caps: operation not
-#    permitted". Drop the init container entirely; DRBD is loaded at
-#    Talos boot via the machineconfig patch (machine.kernel.modules).
+# 2. AppArmor: Talos's default container profile blocks CAP_SYS_MODULE
+#    on the init containers. Annotate every container to run AppArmor
+#    unconfined.
+#
+# 3. drbd-module-loader: removed. The DRBD kernel module is auto-loaded
+#    at Talos boot through machineconfig (machine.kernel.modules), so
+#    the loader is not needed. Keeping it would also fail because its
+#    seLinuxOptions.type=spc_t is not defined in Talos's SELinux policy
+#    (runc: "unable to apply caps: operation not permitted").
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -30,76 +32,3 @@ spec:
       patch: |
         - op: remove
           path: /spec/template/spec/initContainers/0
-        - op: replace
-          path: /spec/template/spec/volumes
-          value:
-            - name: file-pool-0
-              hostPath:
-                path: /var/lib/piraeus-datastore
-                type: DirectoryOrCreate
-            - name: lib-modules
-              hostPath:
-                path: /lib/modules
-                type: Directory
-            - name: usr-src
-              emptyDir: {}
-            - name: dev
-              hostPath:
-                path: /dev
-                type: Directory
-            - name: etc-lvm-archive
-              hostPath:
-                path: /etc/lvm/archive
-                type: DirectoryOrCreate
-            - name: etc-lvm
-              hostPath:
-                path: /etc/lvm
-                type: DirectoryOrCreate
-            - name: etc-lvm-backup
-              hostPath:
-                path: /etc/lvm/backup
-                type: DirectoryOrCreate
-            - name: var-lib-linstor-d
-              hostPath:
-                path: /var/lib/linstor.d
-                type: DirectoryOrCreate
-            - name: var-lib-drbd
-              hostPath:
-                path: /var/lib/drbd
-                type: DirectoryOrCreate
-            - name: run-systemd-system
-              emptyDir: {}
-            - name: run-drbd-shutdown-guard
-              hostPath:
-                path: /run/drbd-shutdown-guard
-                type: DirectoryOrCreate
-            - name: systemd-bus-socket
-              emptyDir: {}
-            - name: run-lock-lvm
-              hostPath:
-                path: /run/lock/lvm
-                type: DirectoryOrCreate
-            - name: run-lvm
-              hostPath:
-                path: /run/lvm
-                type: DirectoryOrCreate
-            - name: run-udev
-              hostPath:
-                path: /run/udev
-                type: Directory
-            - name: var-log-linstor-satellite
-              hostPath:
-                path: /var/log/linstor-satellite
-                type: DirectoryOrCreate
-            - name: satellite-config
-              configMap:
-                name: linstor-satellite-config
-            - name: reactor-config
-              configMap:
-                name: drbd-reactor-config
-            - name: container-etc-lvm
-              emptyDir: {}
-            - name: tmp
-              emptyDir: {}
-            - name: run
-              emptyDir: {}
