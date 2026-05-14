@@ -76,12 +76,14 @@ spec:
         - port: 8200
           protocol: TCP
 ---
-# 3. Egress: DNS (kube-dns) and the Kubernetes API (for the
-# `service_registration "kubernetes"` block that maintains pod labels).
+# 3. Egress: DNS only. apiserver egress is handled by the
+# CiliumNetworkPolicy below (toEntities kube-apiserver), because the
+# apiserver pod uses hostNetwork and Cilium's standard NetworkPolicy
+# ipBlock does not match host-identity traffic.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: vault-egress-dns-apiserver
+  name: vault-egress-dns
   namespace: vault-system
 spec:
   podSelector:
@@ -102,16 +104,26 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Kubernetes API for service_registration "kubernetes" — both the
-    # ClusterIP (10.40.8.1:443) and the control-plane pod endpoint
-    # (10.40.1.101:6443) live inside the Hetzner private CIDR, so we
-    # must allow that range explicitly. The Hetzner firewall and Cilium
-    # HostFirewall constrain external exposure separately.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
+---
+# 4. Egress to kube-apiserver (Cilium-specific). Cilium maps the
+# apiserver to a reserved entity which is the only reliable selector
+# when the apiserver runs in hostNetwork (its endpoint is a node IP,
+# not a pod IP — so standard NetworkPolicy ipBlock won't match it).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: vault-egress-apiserver
+  namespace: vault-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
