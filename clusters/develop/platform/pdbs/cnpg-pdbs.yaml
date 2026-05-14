@@ -1,0 +1,29 @@
+# PodDisruptionBudgets for CloudNativePG clusters.
+# Selector keys come from CNPG operator labels (cnpg.io/cluster).
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-business-pdb
+  namespace: postgresql
+spec:
+  # Business cluster on develop runs 2 instances; allow 1 down for rolling
+  # restarts triggered by CNPG primaryUpdateStrategy=unsupervised.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-business-develop
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-authentik-pdb
+  namespace: authentik
+spec:
+  # Authentik state cluster on develop has 1 instance only; PDB still
+  # declared so voluntary disruptions (drain) wait for replacement to
+  # become Ready. Production raises instances to 2+ and keeps minAvailable=1.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-authentik-develop

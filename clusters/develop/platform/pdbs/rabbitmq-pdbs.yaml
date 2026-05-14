@@ -1,0 +1,20 @@
+# PodDisruptionBudget for RabbitMQ Cluster Operator.
+# Selector keys follow the RabbitMQ Cluster Operator convention.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq-pdb
+  namespace: rabbitmq
+spec:
+  # Develop runs a single replica (see stateful/rabbitmq/rabbitmq-cluster.yaml).
+  # minAvailable: 1 still gates voluntary disruptions during drain so the
+  # pod is rescheduled before the node goes down.
+  # Production runs 3 replicas with quorum queues — keep minAvailable: 1
+  # there too, so up to 2 brokers can be drained concurrently only when
+  # cluster_partition_handling=pause_minority is verified healthy.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexora-rabbitmq
+      app.kubernetes.io/component: rabbitmq

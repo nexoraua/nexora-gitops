@@ -1,0 +1,17 @@
+# PodDisruptionBudget for Dragonfly.
+# Selector matches labels applied by the Dragonfly Operator.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dragonfly-pdb
+  namespace: dragonfly
+spec:
+  # Develop runs a single Dragonfly instance; minAvailable: 1 still
+  # gates drain so it is rescheduled before the node disappears.
+  # Production scales out and uses minAvailable: replicas - 1.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nexora-cache
+      app.kubernetes.io/part-of: dragonfly

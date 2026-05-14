@@ -1,0 +1,51 @@
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yamllint
+        run: pip install --quiet yamllint==1.35.1
+      - name: Lint YAML files
+        run: |
+          yamllint \
+            -d "{extends: relaxed, rules: {line-length: {max: 160}}}" \
+            clusters/
+
+  kubeconform:
+    name: kubeconform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+      # ArgoCD `Application`/`AppProject` CRDs, cert-manager `ClusterIssuer`,
+      # External-Secrets, CNPG, Dragonfly, RabbitMQ, VictoriaMetrics, Loki
+      # operator CRs etc. are not in the upstream Kubernetes schema set;
+      # `-skip` keeps them out of strict validation. Strict mode is still
+      # applied to core Kubernetes kinds.
+      - name: Validate manifests
+        run: |
+          kubeconform \
+            -strict \
+            -summary \
+            -ignore-missing-schemas \
+            -skip "Application,AppProject,ClusterIssuer,Certificate,ExternalSecret,ClusterSecretStore,SecretStore,Cluster,ScheduledBackup,RabbitmqCluster,Dragonfly,VMCluster,VMAgent,VMAlert,VMAlertmanager,VMRule,VMServiceScrape,VMPodScrape,IngressRoute,Middleware,TLSStore,ServersTransport,Lock" \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            $(find clusters -name '*.yaml' -not -path '*/grafana-dashboards/*')
+
+  # TODO: helm-template / argocd-app-render — iterate over apps/*.yaml,
+  # extract chart + values, run `helm template ... --dry-run` against
+  # the resolved chart version. Skipped here because it requires
+  # network access to all upstream Helm repos and adds 30..60s per
+  # chart; revisit when CI runtime is a concern.

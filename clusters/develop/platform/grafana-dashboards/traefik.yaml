@@ -1,0 +1,37 @@
+# Placeholder ConfigMap for the Traefik dashboard.
+# The full dashboard JSON should be imported from grafana.com/grafana/dashboards/4475
+# and pasted into the `traefik.json` key below. Until then, the panel
+# advertises the upstream link so operators can pull the latest revision
+# manually from Grafana UI (Dashboards -> Import -> ID 4475).
+#
+# Upstream: https://grafana.com/grafana/dashboards/4475
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-traefik
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  traefik.json: |
+    {
+      "uid": "traefik-placeholder",
+      "title": "Traefik (placeholder)",
+      "tags": ["traefik", "ingress", "placeholder"],
+      "timezone": "browser",
+      "editable": true,
+      "schemaVersion": 39,
+      "version": 1,
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "Import upstream Traefik dashboard",
+          "gridPos": {"x": 0, "y": 0, "w": 24, "h": 6},
+          "options": {
+            "mode": "markdown",
+            "content": "## Traefik dashboard placeholder\n\nReplace this ConfigMap content with the JSON from\n[grafana.com/grafana/dashboards/4475](https://grafana.com/grafana/dashboards/4475).\n\n1. Open Grafana UI -> Dashboards -> Import.\n2. Enter ID `4475`.\n3. Pick the VictoriaMetrics datasource.\n4. Export the rendered JSON and commit it back to this file."
+          }
+        }
+      ]
+    }

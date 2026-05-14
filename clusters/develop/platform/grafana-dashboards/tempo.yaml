@@ -1,0 +1,36 @@
+# Placeholder ConfigMap for the Tempo Operational dashboard.
+# Replace the JSON below with the export from grafana.com/grafana/dashboards/15474
+# once the Tempo metrics are flowing and the panels have been calibrated
+# against the develop deployment.
+#
+# Upstream: https://grafana.com/grafana/dashboards/15474
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-tempo
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  tempo.json: |
+    {
+      "uid": "tempo-placeholder",
+      "title": "Tempo Operational (placeholder)",
+      "tags": ["tempo", "tracing", "placeholder"],
+      "timezone": "browser",
+      "editable": true,
+      "schemaVersion": 39,
+      "version": 1,
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "Import upstream Tempo dashboard",
+          "gridPos": {"x": 0, "y": 0, "w": 24, "h": 6},
+          "options": {
+            "mode": "markdown",
+            "content": "## Tempo Operational placeholder\n\nImport [grafana.com/grafana/dashboards/15474](https://grafana.com/grafana/dashboards/15474)\nand replace this JSON with the exported dashboard."
+          }
+        }
+      ]
+    }

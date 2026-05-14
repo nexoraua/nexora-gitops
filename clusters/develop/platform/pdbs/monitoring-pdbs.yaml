@@ -1,0 +1,84 @@
+# PodDisruptionBudgets for the monitoring stack.
+# Selector keys come from upstream Helm chart conventions; verify with
+# `kubectl -n monitoring get pods --show-labels` after the first sync.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vmstorage-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmstorage
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vmselect-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmselect
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vminsert-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vminsert
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: loki-pdb
+  namespace: monitoring
+spec:
+  # SingleBinary on develop; production splits read/write/backend paths
+  # and runs separate PDBs per component.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tempo-pdb
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: grafana-pdb
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: alloy-pdb
+  namespace: monitoring
+spec:
+  # Alloy runs as a DaemonSet — PDB protects per-node disruption batches
+  # so log/metric/trace gateways are not all evicted simultaneously.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alloy

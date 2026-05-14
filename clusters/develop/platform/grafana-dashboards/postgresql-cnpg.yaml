@@ -1,0 +1,839 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-postgresql-cnpg
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  postgresql-cnpg.json: |
+    {
+      "uid": "postgresql-cnpg",
+      "title": "PostgreSQL (CNPG)",
+      "tags": ["postgresql", "database", "cnpg"],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "type": "query",
+            "datasource": {"type": "prometheus"},
+            "query": "label_values(cnpg_collector_up, cluster)",
+            "refresh": 2,
+            "includeAll": false,
+            "sort": 1,
+            "current": {},
+            "multi": false
+          },
+          {
+            "name": "namespace",
+            "type": "query",
+            "datasource": {"type": "prometheus"},
+            "query": "label_values(cnpg_collector_up{cluster=\"$cluster\"}, namespace)",
+            "refresh": 2,
+            "includeAll": false,
+            "sort": 1,
+            "current": {},
+            "multi": false
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "row",
+          "title": "Cluster Status",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+          "collapsed": false
+        },
+        {
+          "type": "stat",
+          "title": "Instances Total",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+          "targets": [
+            {
+              "expr": "count(cnpg_collector_up{cluster=\"$cluster\", namespace=\"$namespace\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "green", "value": 3}
+                ]
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Instances Ready",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+          "targets": [
+            {
+              "expr": "count(cnpg_collector_up{cluster=\"$cluster\", namespace=\"$namespace\"} == 1)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "green", "value": 3}
+                ]
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Current Primary",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+          "targets": [
+            {
+              "expr": "cnpg_pg_replication_in_recovery{cluster=\"$cluster\", namespace=\"$namespace\"} == 0",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "green", "value": null}]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "textMode": "name",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Max Replication Lag",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+          "targets": [
+            {
+              "expr": "max(cnpg_pg_replication_lag{cluster=\"$cluster\", namespace=\"$namespace\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              },
+              "unit": "s"
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          }
+        },
+        {
+          "type": "row",
+          "title": "Connections",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "Active Connections",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 6},
+          "targets": [
+            {
+              "expr": "sum by (pod) (cnpg_pg_stat_activity_count{cluster=\"$cluster\", namespace=\"$namespace\", state=\"active\"})",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Idle Connections",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 6},
+          "targets": [
+            {
+              "expr": "sum by (pod) (cnpg_pg_stat_activity_count{cluster=\"$cluster\", namespace=\"$namespace\", state=\"idle\"})",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Connections by Database",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 6, "x": 12, "y": 6},
+          "targets": [
+            {
+              "expr": "sum by (datname) (cnpg_pg_stat_activity_count{cluster=\"$cluster\", namespace=\"$namespace\"})",
+              "legendFormat": "{{datname}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true,
+                "drawStyle": "bars",
+                "stacking": {"mode": "normal"}
+              },
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "type": "gauge",
+          "title": "Max Connections Usage %",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 6, "x": 18, "y": 6},
+          "targets": [
+            {
+              "expr": "sum(cnpg_pg_stat_activity_count{cluster=\"$cluster\", namespace=\"$namespace\"}) / max(cnpg_pg_settings_setting{name=\"max_connections\", cluster=\"$cluster\", namespace=\"$namespace\"}) * 100",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 70},
+                  {"color": "red", "value": 90}
+                ]
+              },
+              "min": 0,
+              "max": 100,
+              "unit": "percent"
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Query Performance",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "Queries per Second (by type)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+          "targets": [
+            {
+              "expr": "sum(rate(cnpg_pg_stat_database_tup_fetched{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "SELECT (fetched)",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(cnpg_pg_stat_database_tup_inserted{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "INSERT",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(rate(cnpg_pg_stat_database_tup_updated{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "UPDATE",
+              "refId": "C"
+            },
+            {
+              "expr": "sum(rate(cnpg_pg_stat_database_tup_deleted{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "DELETE",
+              "refId": "D"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "ops"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Transactions per Second",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(cnpg_pg_stat_database_xact_commit{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}} commit",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (pod) (rate(cnpg_pg_stat_database_xact_rollback{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}} rollback",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "ops"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Query Duration (p50 / p95 / p99)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(cnpg_pg_stat_database_blk_read_time_bucket{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])))",
+              "legendFormat": "p50 read time",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(cnpg_pg_stat_database_blk_read_time_bucket{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])))",
+              "legendFormat": "p95 read time",
+              "refId": "B"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(cnpg_pg_stat_database_blk_read_time_bucket{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])))",
+              "legendFormat": "p99 read time",
+              "refId": "C"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 5,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "ms"
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Replication",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "Replication Lag (seconds)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+          "targets": [
+            {
+              "expr": "cnpg_pg_replication_lag{cluster=\"$cluster\", namespace=\"$namespace\"}",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Replication Lag (bytes)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+          "targets": [
+            {
+              "expr": "cnpg_pg_stat_replication_sent_diff_bytes{cluster=\"$cluster\", namespace=\"$namespace\"}",
+              "legendFormat": "{{pod}} sent diff",
+              "refId": "A"
+            },
+            {
+              "expr": "cnpg_pg_stat_replication_write_diff_bytes{cluster=\"$cluster\", namespace=\"$namespace\"}",
+              "legendFormat": "{{pod}} write diff",
+              "refId": "B"
+            },
+            {
+              "expr": "cnpg_pg_stat_replication_replay_diff_bytes{cluster=\"$cluster\", namespace=\"$namespace\"}",
+              "legendFormat": "{{pod}} replay diff",
+              "refId": "C"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "bytes"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "WAL Generation Rate",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+          "targets": [
+            {
+              "expr": "rate(cnpg_pg_stat_archiver_archived_count{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])",
+              "legendFormat": "{{pod}} archived/s",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "ops"
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Database Size",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "Database Size",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 33},
+          "targets": [
+            {
+              "expr": "cnpg_pg_database_size_bytes{cluster=\"$cluster\", namespace=\"$namespace\"}",
+              "legendFormat": "{{pod}} - {{datname}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "bytes"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Dead Tuples (top tables)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 33},
+          "targets": [
+            {
+              "expr": "topk(10, cnpg_pg_stat_user_tables_n_dead_tup{cluster=\"$cluster\", namespace=\"$namespace\"})",
+              "legendFormat": "{{pod}} {{relname}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Table Bloat Ratio (dead/live tuples)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 33},
+          "targets": [
+            {
+              "expr": "topk(10, cnpg_pg_stat_user_tables_n_dead_tup{cluster=\"$cluster\", namespace=\"$namespace\"} / (cnpg_pg_stat_user_tables_n_live_tup{cluster=\"$cluster\", namespace=\"$namespace\"} + 1) * 100)",
+              "legendFormat": "{{pod}} {{relname}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "percent"
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Buffer & Cache",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "Cache Hit Ratio",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 42},
+          "targets": [
+            {
+              "expr": "sum by (pod) (cnpg_pg_stat_database_blks_hit{cluster=\"$cluster\", namespace=\"$namespace\"}) / (sum by (pod) (cnpg_pg_stat_database_blks_hit{cluster=\"$cluster\", namespace=\"$namespace\"}) + sum by (pod) (cnpg_pg_stat_database_blks_read{cluster=\"$cluster\", namespace=\"$namespace\"})) * 100",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 90},
+                  {"color": "green", "value": 99}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Shared Buffer Reads vs Hits (rate)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 42},
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(cnpg_pg_stat_database_blks_hit{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}} hits",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (pod) (rate(cnpg_pg_stat_database_blks_read{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}} reads (disk)",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "ops"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Temp Files & Bytes",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 42},
+          "targets": [
+            {
+              "expr": "rate(cnpg_pg_stat_database_temp_files{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])",
+              "legendFormat": "{{pod}} temp files/s",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(cnpg_pg_stat_database_temp_bytes{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])",
+              "legendFormat": "{{pod}} temp bytes/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "Bps"
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "WAL & Backup",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 50},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "WAL Archiving (archived vs failed)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 51},
+          "targets": [
+            {
+              "expr": "rate(cnpg_pg_stat_archiver_archived_count{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])",
+              "legendFormat": "{{pod}} archived/s",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(cnpg_pg_stat_archiver_failed_count{cluster=\"$cluster\", namespace=\"$namespace\"}[$__rate_interval])",
+              "legendFormat": "{{pod}} failed/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "ops"
+            }
+          }
+        },
+        {
+          "type": "stat",
+          "title": "WAL Archiver Failed Total",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 4, "x": 8, "y": 51},
+          "targets": [
+            {
+              "expr": "sum(cnpg_pg_stat_archiver_failed_count{cluster=\"$cluster\", namespace=\"$namespace\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "red", "value": 1}
+                ]
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Last Backup Age",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 4, "x": 12, "y": 51},
+          "targets": [
+            {
+              "expr": "time() - max(cnpg_pg_stat_archiver_last_archived_time{cluster=\"$cluster\", namespace=\"$namespace\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 3600},
+                  {"color": "red", "value": 86400}
+                ]
+              },
+              "unit": "s"
+            }
+          },
+          "options": {
+            "colorMode": "background",
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "WAL Size on Disk",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 51},
+          "targets": [
+            {
+              "expr": "cnpg_pg_wal_storage_size{cluster=\"$cluster\", namespace=\"$namespace\"}",
+              "legendFormat": "{{pod}} WAL size",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "bytes"
+            }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Resource Usage",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 59},
+          "collapsed": false
+        },
+        {
+          "type": "timeseries",
+          "title": "CPU Usage (PostgreSQL Pods)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 60},
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod=~\"$cluster-\\\\d+\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory Usage (PostgreSQL Pods)",
+          "datasource": {"type": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 60},
+          "targets": [
+            {
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$cluster-\\\\d+\"})",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "min(kube_pod_container_resource_limits{namespace=\"$namespace\", pod=~\"$cluster-\\\\d+\", resource=\"memory\"})",
+              "legendFormat": "Memory Limit",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "spanNulls": true
+              },
+              "unit": "bytes"
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "version": 1
+    }

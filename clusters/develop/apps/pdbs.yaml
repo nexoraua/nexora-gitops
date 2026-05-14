@@ -1,20 +1,23 @@
+# PodDisruptionBudgets for stateful workloads and the monitoring stack.
+# Manifests live in clusters/develop/platform/pdbs/.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cluster-issuer
+  name: pdbs
   namespace: argocd
   annotations:
-    # Runs after cert-manager but before anything that requests certs.
-    argocd.argoproj.io/sync-wave: "-1"
+    # Sync after operators install their CRDs / workloads (wave 1) so the
+    # PDB selectors match Pods that already exist.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: platform
   source:
     repoURL: https://github.com/nexora/nexora-gitops.git
     targetRevision: main
-    path: clusters/develop/platform/cert-manager
+    path: clusters/develop/platform/pdbs
   destination:
     server: https://kubernetes.default.svc
-    namespace: cert-manager
+    namespace: kube-system
   syncPolicy:
     automated:
       prune: true
