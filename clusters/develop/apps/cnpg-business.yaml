@@ -11,7 +11,7 @@ metadata:
 spec:
   project: data
   source:
-    repoURL: https://github.com/nexora/nexora-gitops.git
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
     targetRevision: main
     path: clusters/develop/stateful/postgresql
   destination:

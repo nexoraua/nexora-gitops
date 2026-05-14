@@ -9,7 +9,7 @@ metadata:
 spec:
   description: Infrastructure, operators, and cross-cutting platform resources
   sourceRepos:
-    - https://github.com/nexora/nexora-gitops.git
+    - https://github.com/nexoraua/nexora-gitops.git
     - https://bitnami-labs.github.io/sealed-secrets
     - https://charts.jetstack.io
     - https://traefik.github.io/charts
@@ -37,7 +37,7 @@ metadata:
 spec:
   description: Stateful workload clusters managed by operators
   sourceRepos:
-    - https://github.com/nexora/nexora-gitops.git
+    - https://github.com/nexoraua/nexora-gitops.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: postgresql
@@ -66,7 +66,7 @@ metadata:
 spec:
   description: VictoriaMetrics, Grafana, Loki, Tempo, Alloy, kube-prometheus-stack
   sourceRepos:
-    - https://github.com/nexora/nexora-gitops.git
+    - https://github.com/nexoraua/nexora-gitops.git
     - https://victoriametrics.github.io/helm-charts
     - https://grafana.github.io/helm-charts
     - https://prometheus-community.github.io/helm-charts
@@ -100,7 +100,7 @@ metadata:
 spec:
   description: Authentik (central IdP), Vault, Nexora services
   sourceRepos:
-    - https://github.com/nexora/nexora-gitops.git
+    - https://github.com/nexoraua/nexora-gitops.git
     - https://charts.goauthentik.io
     - https://helm.releases.hashicorp.com
   destinations:
