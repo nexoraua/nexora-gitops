@@ -1,4 +1,4 @@
-# Talos-specific patches to LINSTOR satellite pods.
+# Talos-specific patches to the LINSTOR satellite DaemonSet.
 #
 # Talos breaks the upstream Piraeus satellite spec in three places:
 #
@@ -6,15 +6,11 @@
 #    Directory type check fails and blocks every container in the pod.
 # 2. AppArmor — the upstream profile blocks CAP_SYS_MODULE on init
 #    containers. Annotate to run unconfined.
-# 3. seLinuxOptions.type=spc_t — runc rejects the unknown SELinux
-#    type with "unable to apply caps: operation not permitted". Strip
-#    the field so kubelet falls back to Talos's default container_t.
-#
-# DRBD kernel module is loaded at Talos boot via machineconfig
-# (machine.kernel.modules) — the upstream drbd-module-loader init
-# container is therefore unnecessary, and we replace it with a `pause`
-# no-op since stripping it entirely is brittle (we'd have to track
-# Piraeus's container index).
+# 3. drbd-module-loader needs to apply seLinuxOptions.type=spc_t —
+#    a CoreOS/Fedora type that Talos's SELinux policy doesn't define,
+#    so runc fails with "unable to apply caps: operation not
+#    permitted". Drop the init container entirely; DRBD is loaded at
+#    Talos boot via the machineconfig patch (machine.kernel.modules).
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -23,28 +19,19 @@ spec:
   podTemplate:
     metadata:
       annotations:
-        container.apparmor.security.beta.kubernetes.io/drbd-module-loader: unconfined
         container.apparmor.security.beta.kubernetes.io/drbd-shutdown-guard: unconfined
         container.apparmor.security.beta.kubernetes.io/setup-lvm-configuration: unconfined
         container.apparmor.security.beta.kubernetes.io/linstor-satellite: unconfined
         container.apparmor.security.beta.kubernetes.io/drbd-reactor: unconfined
   patches:
     - target:
-        kind: Pod
-        name: satellite
+        kind: DaemonSet
+        name: linstor-satellite
       patch: |
         - op: remove
-          path: /spec/initContainers/0
-        - op: remove
-          path: /spec/initContainers/0/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/initContainers/1/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/containers/0/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/containers/1/securityContext/seLinuxOptions
+          path: /spec/template/spec/initContainers/0
         - op: replace
-          path: /spec/volumes
+          path: /spec/template/spec/volumes
           value:
             - name: file-pool-0
               hostPath:
