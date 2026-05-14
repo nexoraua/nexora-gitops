@@ -33,7 +33,7 @@ spec:
             # chart's authentik Secret, which Authentik then takes as
             # the password verbatim.
           redis:
-            host: authentik-cache.authentik.svc
+            host: nexora-cache.dragonfly.svc.cluster.local
         server:
           replicas: 1
           ingress:
