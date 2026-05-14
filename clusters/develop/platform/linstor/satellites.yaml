@@ -1,12 +1,7 @@
-# Per-nodepool LinstorSatelliteConfiguration. The operator creates a
-# LinstorSatellite (and underlying DaemonSet pod) only for nodes that
-# match at least one of these selectors AND for which the satellite
-# pod can actually schedule (tolerations + node selector aligned).
-#
-# Why fileThin: sparse-allocation lets us over-commit the pool. The
-# fileThin pool is just a directory on /var/lib/piraeus-datastore;
-# Talos persists /var across reboots so the pool survives node
-# upgrades.
+# Per-nodepool LinstorSatelliteConfiguration — defines storage pools.
+# Tolerations + Talos overrides are in talos-overrides.yaml (applies
+# cluster-wide), so this file is just about which nodes get a pool
+# and what kind.
 ---
 # workers (cx33, ~74 GB ephemeral)
 apiVersion: piraeus.io/v1
@@ -21,8 +16,7 @@ spec:
       fileThinPool:
         directory: /var/lib/piraeus-datastore
 ---
-# system pool (cx33, ~74 GB). Tainted nodepool=system — satellite
-# pod needs the toleration to schedule.
+# system pool (cx33, ~74 GB)
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -30,19 +24,12 @@ metadata:
 spec:
   nodeSelector:
     nodepool: system
-  podTemplate:
-    spec:
-      tolerations:
-        - key: nodepool
-          operator: Equal
-          value: system
-          effect: NoSchedule
   storagePools:
     - name: pool0
       fileThinPool:
         directory: /var/lib/piraeus-datastore
 ---
-# stateful pool (cx43, ~93 GB). Tainted nodepool=database — same.
+# stateful pool (cx43, ~93 GB)
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -50,13 +37,6 @@ metadata:
 spec:
   nodeSelector:
     nodepool: database
-  podTemplate:
-    spec:
-      tolerations:
-        - key: nodepool
-          operator: Equal
-          value: database
-          effect: NoSchedule
   storagePools:
     - name: pool0
       fileThinPool:

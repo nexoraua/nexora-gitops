@@ -1,15 +1,12 @@
 # Official Piraeus Operator Talos overrides.
 # Source: https://github.com/piraeusdatastore/piraeus-operator/blob/main/docs/how-to/talos.md
 #
-# Talos:
-#   - /etc is read-only → /etc/lvm/{archive,backup} must be relocated
-#     to /var/etc/lvm/{archive,backup}
-#   - no systemd → drbd-shutdown-guard + its volumes are unusable
-#   - DRBD module is provided by the Talos `siderolabs/drbd` system
-#     extension and loaded at boot via machine.kernel.modules — the
-#     drbd-module-loader init container is unnecessary
-#   - kernel header / src trees aren't present (immutable image), so
-#     lib-modules + usr-src volume mounts are pointless
+# Applies cluster-wide (no nodeSelector) so every LINSTOR satellite
+# pod gets:
+#   - Talos-compatible volume/initContainer set
+#   - tolerations for both system + database nodepool taints, so the
+#     satellite DaemonSet lands on stateful-1 and system-1 as well as
+#     the (untainted) workers pool
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -17,6 +14,15 @@ metadata:
 spec:
   podTemplate:
     spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+        - key: nodepool
+          operator: Equal
+          value: database
+          effect: NoSchedule
       initContainers:
         - name: drbd-shutdown-guard
           $patch: delete
