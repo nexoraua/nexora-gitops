@@ -15,6 +15,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # App clients reach the Redis-protocol port.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -30,6 +31,20 @@ spec:
               kubernetes.io/metadata.name: monitoring
       ports:
         - port: 6379
+          protocol: TCP
+    # The Dragonfly Operator drives leader election + replication via
+    # the admin port 9999. Without this allow, it can't run "SLAVE OF
+    # NO ONE" on the pod, never labels the pod role=master, and the
+    # Service ends up with zero endpoints — so every client connection
+    # gets EPERM from Cilium's socket LB.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dragonfly-operator-system
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 9999
           protocol: TCP
 ---
 # Dragonfly itself needs DNS egress so the operator can resolve peers.
