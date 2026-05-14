@@ -1,0 +1,104 @@
+# Standalone Tailscale subnet router. Runs the tailscale CLI in
+# privileged mode; advertises 10.40.0.0/16 (Hetzner private network of
+# the develop cluster) into the tailnet. The single replica is enough
+# for develop — Tailscale itself handles route fail-over across peers,
+# we just need one advertise point inside the cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+  labels:
+    app: tailscale-subnet-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tailscale-subnet-router
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: tailscale-subnet-router
+    spec:
+      serviceAccountName: tailscale-subnet-router
+      nodeSelector:
+        nodepool: system
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+      hostNetwork: false
+      containers:
+        - name: tailscale
+          image: tailscale/tailscale:v1.78.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TS_KUBE_SECRET
+              value: tailscale-state
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth
+                  key: auth-key
+            - name: TS_ROUTES
+              value: "10.40.0.0/16"
+            - name: TS_HOSTNAME
+              value: nexora-develop-subnet-router
+            - name: TS_EXTRA_ARGS
+              # Advertise tags so Tailscale ACLs can target this device.
+              value: "--advertise-tags=tag:k8s,tag:nexora-develop --accept-dns=false"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+# Tailscale uses Kubernetes Secret as state store (TS_KUBE_SECRET).
+# This Role lets the SA read/write it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["tailscale-state"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tailscale-subnet-router
+subjects:
+  - kind: ServiceAccount
+    name: tailscale-subnet-router
+    namespace: tailscale

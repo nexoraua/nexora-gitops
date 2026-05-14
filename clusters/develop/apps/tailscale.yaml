@@ -1,47 +1,33 @@
-# Tailscale Operator + Subnet Router for develop cluster.
-# Advertises the Hetzner private network (10.40.0.0/16) into the tailnet,
-# so engineers on Tailscale can reach the k8s API, pod IPs, and service
-# IPs without their public IP being in TF_VAR_FIREWALL_ALLOWED_IPS.
+# Standalone Tailscale subnet router for develop cluster.
+# Runs as a privileged Deployment with a pre-shared auth key — no
+# Tailscale Operator / OAuth client needed. Advertises the Hetzner
+# private network (10.40.0.0/16) into the nxua tailnet so engineers
+# on Tailscale reach kube API, pod IPs, and service IPs without
+# their public IP being in TF_VAR_FIREWALL_ALLOWED_IPS.
+#
+# Auth key requirements (generated at
+# https://login.tailscale.com/admin/settings/keys):
+#   - Reusable: yes
+#   - Ephemeral: no
+#   - Pre-authorized: yes
+#   - Tags: tag:k8s (define tagOwners in ACL first)
+# Then seed it into Vault:
+#   vault kv put kv/nexora/develop/tailscale auth-key="tskey-auth-..."
+# ESO materializes a Secret named tailscale-auth in the tailscale ns
+# (see platform/secrets/tailscale-oauth.yaml).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: tailscale-operator
+  name: tailscale-subnet-router
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: platform
   source:
-    repoURL: https://pkgs.tailscale.com/helmcharts
-    chart: tailscale-operator
-    targetRevision: 1.78.1
-    helm:
-      values: |
-        oauth:
-          # client_id and client_secret read from the secret created by
-          # bootstrap-secrets via External Secrets Operator.
-          # See clusters/develop/platform/secrets/tailscale-oauth.yaml.
-        operatorConfig:
-          hostname: nexora-develop-operator
-        apiServerProxyConfig:
-          # Optional: expose the Kubernetes API server through the tailnet
-          # so engineers can `kubectl` against the cluster without their
-          # IP being in the Hetzner firewall.
-          mode: "true"
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            memory: 128Mi
-        proxyConfig:
-          # Subnet router and ingress/egress proxies run as
-          # Deployments — same resource profile.
-          image:
-            repository: tailscale/tailscale
-            tag: v1.78.1
-          defaultTags:
-            - tag:k8s
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/tailscale
   destination:
     server: https://kubernetes.default.svc
     namespace: tailscale
