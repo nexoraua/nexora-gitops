@@ -1,9 +1,10 @@
-# Per-nodepool LinstorSatelliteConfiguration — defines storage pools.
-# Tolerations + Talos overrides are in talos-overrides.yaml (applies
-# cluster-wide), so this file is just about which nodes get a pool
-# and what kind.
+# Per-nodepool LinstorSatelliteConfiguration — defines storage pools
+# AND tolerations.  Both fields are needed at the per-pool level
+# because Piraeus uses tolerations from the matching configurations
+# (not just the cluster-wide one) to decide whether the satellite
+# DaemonSet can schedule on each node.
 ---
-# workers (cx33, ~74 GB ephemeral)
+# workers (cx33, ~74 GB ephemeral) — no taint, no toleration needed.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -16,7 +17,7 @@ spec:
       fileThinPool:
         directory: /var/lib/piraeus-datastore
 ---
-# system pool (cx33, ~74 GB)
+# system pool (cx33, ~74 GB).
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -24,12 +25,19 @@ metadata:
 spec:
   nodeSelector:
     nodepool: system
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
   storagePools:
     - name: pool0
       fileThinPool:
         directory: /var/lib/piraeus-datastore
 ---
-# stateful pool (cx43, ~93 GB)
+# stateful pool (cx43, ~93 GB).
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -37,6 +45,13 @@ metadata:
 spec:
   nodeSelector:
     nodepool: database
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: database
+          effect: NoSchedule
   storagePools:
     - name: pool0
       fileThinPool:

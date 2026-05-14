@@ -2,11 +2,9 @@
 # Source: https://github.com/piraeusdatastore/piraeus-operator/blob/main/docs/how-to/talos.md
 #
 # Applies cluster-wide (no nodeSelector) so every LINSTOR satellite
-# pod gets:
-#   - Talos-compatible volume/initContainer set
-#   - tolerations for both system + database nodepool taints, so the
-#     satellite DaemonSet lands on stateful-1 and system-1 as well as
-#     the (untainted) workers pool
+# pod gets the Talos-compatible volume / initContainer set.
+# Tolerations are in the per-pool configs (satellites.yaml) so they
+# travel together with the nodeSelector that picks that pool.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -14,15 +12,6 @@ metadata:
 spec:
   podTemplate:
     spec:
-      tolerations:
-        - key: nodepool
-          operator: Equal
-          value: system
-          effect: NoSchedule
-        - key: nodepool
-          operator: Equal
-          value: database
-          effect: NoSchedule
       initContainers:
         - name: drbd-shutdown-guard
           $patch: delete
