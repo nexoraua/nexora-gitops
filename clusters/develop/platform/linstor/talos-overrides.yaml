@@ -1,24 +1,20 @@
 # Talos-specific patches to LINSTOR satellite pods.
 #
-# Three things break with the upstream Piraeus satellite spec on Talos:
+# Talos breaks the upstream Piraeus satellite spec in three places:
 #
-# 1. `/run/systemd/system/` hostPath. Talos has no systemd; the
-#    drbd-shutdown-guard's hostPath.type=Directory check fails and
-#    kubelet refuses to start ANY container in the pod. Override the
-#    volume to emptyDir. drbd-shutdown-guard then runs but its
-#    systemd-unit registration is a silent no-op — Talos handles
-#    shutdowns through its own sequence anyway.
+# 1. /run/systemd/system hostPath — Talos has no systemd, the
+#    Directory type check fails and blocks every container in the pod.
+# 2. AppArmor — the upstream profile blocks CAP_SYS_MODULE on init
+#    containers. Annotate to run unconfined.
+# 3. seLinuxOptions.type=spc_t — runc rejects the unknown SELinux
+#    type with "unable to apply caps: operation not permitted". Strip
+#    the field so kubelet falls back to Talos's default container_t.
 #
-# 2. AppArmor profile. Talos's default container profile blocks the
-#    init containers from applying CAP_SYS_MODULE. Annotate every
-#    container to run AppArmor unconfined.
-#
-# 3. SELinux type spc_t. The upstream spec hard-codes seLinuxOptions
-#    of type=spc_t (a CoreOS/Fedora "super privileged container"
-#    type). Talos's SELinux policy doesn't define spc_t, so runc
-#    fails with "unable to apply caps: operation not permitted".
-#    Strip the seLinuxOptions field from every init/main container
-#    so kubelet uses Talos's default container_t.
+# DRBD kernel module is loaded at Talos boot via machineconfig
+# (machine.kernel.modules) — the upstream drbd-module-loader init
+# container is therefore unnecessary, and we replace it with a `pause`
+# no-op since stripping it entirely is brittle (we'd have to track
+# Piraeus's container index).
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -37,6 +33,16 @@ spec:
         kind: Pod
         name: satellite
       patch: |
+        - op: remove
+          path: /spec/initContainers/0
+        - op: remove
+          path: /spec/initContainers/0/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/initContainers/1/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/containers/0/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/containers/1/securityContext/seLinuxOptions
         - op: replace
           path: /spec/volumes
           value:
@@ -110,13 +116,3 @@ spec:
               emptyDir: {}
             - name: run
               emptyDir: {}
-        - op: remove
-          path: /spec/initContainers/0/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/initContainers/1/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/initContainers/2/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/containers/0/securityContext/seLinuxOptions
-        - op: remove
-          path: /spec/containers/1/securityContext/seLinuxOptions
