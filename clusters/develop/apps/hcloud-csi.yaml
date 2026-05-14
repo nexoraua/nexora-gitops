@@ -29,7 +29,7 @@ spec:
               effect: NoSchedule
         storageClasses:
           - name: hcloud-volumes
-            defaultStorageClass: true
+            defaultStorageClass: false
             reclaimPolicy: Retain
         # Reuse the hcloud secret the Talos module already provisioned
         # for the cloud-controller-manager (kube-system/hcloud).
