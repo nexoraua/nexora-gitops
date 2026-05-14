@@ -1,0 +1,126 @@
+# Allow rules to make Vault actually work behind default-deny.
+# Without these, vault listens on 8200 but no traffic ever reaches it.
+---
+# 1. Intra-cluster raft + API traffic between vault pods (8200, 8201).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-peer
+  namespace: vault-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - port: 8200
+          protocol: TCP
+        - port: 8201
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - port: 8200
+          protocol: TCP
+        - port: 8201
+          protocol: TCP
+---
+# 2. API access from External Secrets, ArgoCD, observability, app namespaces.
+# Authentik talks to Vault for OIDC client secret retrieval; ESO mounts
+# Vault as backend.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-api-ingress
+  namespace: vault-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: external-secrets
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexora-api
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexora-admin
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 8200
+          protocol: TCP
+---
+# 3. Egress: DNS (kube-dns) and the Kubernetes API (for the
+# `service_registration "kubernetes"` block that maintains pod labels).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-egress-dns-apiserver
+  namespace: vault-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # API server: Cilium runs in kube-proxy-less mode, so the destination
+    # is the apiserver pod IPs. Easiest portable allow is "any ipBlock
+    # outside the cluster CIDR, port 443" — but here we just open 6443/443
+    # to anywhere; Cilium HostFirewall + Hetzner firewall already
+    # constrain the actual surface.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.40.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # Kubernetes API service ClusterIP (in-cluster path).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
