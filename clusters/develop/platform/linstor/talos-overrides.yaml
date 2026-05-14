@@ -1,47 +1,43 @@
-# Talos-specific patches to the LINSTOR satellite DaemonSet.
+# Official Piraeus Operator Talos overrides.
+# Source: https://github.com/piraeusdatastore/piraeus-operator/blob/main/docs/how-to/talos.md
 #
-# 1. /run/systemd/system: Talos has no systemd. We pre-create that
-#    directory via the talos-run-systemd-mkdir DaemonSet (host-prep.yaml)
-#    so the satellite's hostPath.type=Directory mount succeeds.
-#
-# 2. AppArmor: Talos's default container profile blocks CAP_SYS_MODULE
-#    on the init containers. Annotate every container to run AppArmor
-#    unconfined.
-#
-# 3. drbd-module-loader: removed. The DRBD kernel module is auto-loaded
-#    at Talos boot through machineconfig (machine.kernel.modules), so
-#    the loader is not needed. Keeping it would also fail because its
-#    seLinuxOptions.type=spc_t is not defined in Talos's SELinux policy
-#    (runc: "unable to apply caps: operation not permitted").
+# Talos:
+#   - /etc is read-only → /etc/lvm/{archive,backup} must be relocated
+#     to /var/etc/lvm/{archive,backup}
+#   - no systemd → drbd-shutdown-guard + its volumes are unusable
+#   - DRBD module is provided by the Talos `siderolabs/drbd` system
+#     extension and loaded at boot via machine.kernel.modules — the
+#     drbd-module-loader init container is unnecessary
+#   - kernel header / src trees aren't present (immutable image), so
+#     lib-modules + usr-src volume mounts are pointless
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
   name: talos-overrides
 spec:
   podTemplate:
-    metadata:
-      annotations:
-        # drbd-shutdown-guard + drbd-module-loader are removed via the
-        # patch below; only annotate containers that actually exist or
-        # the DaemonSet spec is rejected ("container not found").
-        container.apparmor.security.beta.kubernetes.io/setup-lvm-configuration: unconfined
-        container.apparmor.security.beta.kubernetes.io/linstor-satellite: unconfined
-        container.apparmor.security.beta.kubernetes.io/drbd-reactor: unconfined
-  patches:
-    # Piraeus names the satellite DaemonSet per node
-    # (linstor-satellite.worker-1, .system-1, ...). Match by label
-    # instead of name regex — works regardless of Piraeus's name
-    # generation.
-    - target:
-        kind: DaemonSet
-        labelSelector: "app.kubernetes.io/component=linstor-satellite"
-      patch: |
-        # Remove drbd-module-loader (index 0) — DRBD loaded at Talos boot.
-        - op: remove
-          path: /spec/template/spec/initContainers/0
-        # Remove drbd-shutdown-guard (now index 0 after previous remove)
-        # — hangs forever on "Connect to systemd bus" because Talos has
-        # no systemd. Loss of graceful DRBD shutdown is acceptable on
-        # develop; Talos's reboot sequence already drains pods first.
-        - op: remove
-          path: /spec/template/spec/initContainers/0
+    spec:
+      initContainers:
+        - name: drbd-shutdown-guard
+          $patch: delete
+        - name: drbd-module-loader
+          $patch: delete
+      volumes:
+        - name: run-systemd-system
+          $patch: delete
+        - name: run-drbd-shutdown-guard
+          $patch: delete
+        - name: systemd-bus-socket
+          $patch: delete
+        - name: lib-modules
+          $patch: delete
+        - name: usr-src
+          $patch: delete
+        - name: etc-lvm-backup
+          hostPath:
+            path: /var/etc/lvm/backup
+            type: DirectoryOrCreate
+        - name: etc-lvm-archive
+          hostPath:
+            path: /var/etc/lvm/archive
+            type: DirectoryOrCreate
