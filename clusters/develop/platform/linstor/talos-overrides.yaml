@@ -21,14 +21,19 @@ spec:
   podTemplate:
     metadata:
       annotations:
-        container.apparmor.security.beta.kubernetes.io/drbd-shutdown-guard: unconfined
+        # drbd-shutdown-guard + drbd-module-loader are removed via the
+        # patch below; only annotate containers that actually exist or
+        # the DaemonSet spec is rejected ("container not found").
         container.apparmor.security.beta.kubernetes.io/setup-lvm-configuration: unconfined
         container.apparmor.security.beta.kubernetes.io/linstor-satellite: unconfined
         container.apparmor.security.beta.kubernetes.io/drbd-reactor: unconfined
   patches:
+    # `name` is a regex in kustomize — Piraeus names the DaemonSet
+    # per-node (linstor-satellite.worker-1 etc.), so anchor the regex
+    # to that pattern.
     - target:
         kind: DaemonSet
-        name: linstor-satellite
+        name: linstor-satellite\..*
       patch: |
         # Remove drbd-module-loader (index 0) — DRBD loaded at Talos boot.
         - op: remove
