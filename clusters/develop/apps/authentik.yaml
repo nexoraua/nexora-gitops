@@ -26,7 +26,12 @@ spec:
             host: nexora-authentik-develop-rw.authentik.svc
             name: authentik
             user: authentik
-            password: ${POSTGRES_PASSWORD}
+            # Password is injected via envFrom from the
+            # authentik-bootstrap Secret (key
+            # AUTHENTIK_POSTGRESQL__PASSWORD). Setting this field here
+            # would make Helm template the literal `${VAR}` into the
+            # chart's authentik Secret, which Authentik then takes as
+            # the password verbatim.
           redis:
             host: authentik-cache.authentik.svc
         server:
