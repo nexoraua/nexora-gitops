@@ -28,12 +28,13 @@ spec:
         container.apparmor.security.beta.kubernetes.io/linstor-satellite: unconfined
         container.apparmor.security.beta.kubernetes.io/drbd-reactor: unconfined
   patches:
-    # `name` is a regex in kustomize — Piraeus names the DaemonSet
-    # per-node (linstor-satellite.worker-1 etc.), so anchor the regex
-    # to that pattern.
+    # Piraeus names the satellite DaemonSet per node
+    # (linstor-satellite.worker-1, .system-1, ...). Match by label
+    # instead of name regex — works regardless of Piraeus's name
+    # generation.
     - target:
         kind: DaemonSet
-        name: linstor-satellite\..*
+        labelSelector: "app.kubernetes.io/component=linstor-satellite"
       patch: |
         # Remove drbd-module-loader (index 0) — DRBD loaded at Talos boot.
         - op: remove
