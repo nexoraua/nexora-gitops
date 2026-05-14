@@ -1,0 +1,57 @@
+# Tailscale Operator + Subnet Router for develop cluster.
+# Advertises the Hetzner private network (10.40.0.0/16) into the tailnet,
+# so engineers on Tailscale can reach the k8s API, pod IPs, and service
+# IPs without their public IP being in TF_VAR_FIREWALL_ALLOWED_IPS.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://pkgs.tailscale.com/helmcharts
+    chart: tailscale-operator
+    targetRevision: 1.78.1
+    helm:
+      values: |
+        oauth:
+          # client_id and client_secret read from the secret created by
+          # bootstrap-secrets via External Secrets Operator.
+          # See clusters/develop/platform/secrets/tailscale-oauth.yaml.
+        operatorConfig:
+          hostname: nexora-develop-operator
+        apiServerProxyConfig:
+          # Optional: expose the Kubernetes API server through the tailnet
+          # so engineers can `kubectl` against the cluster without their
+          # IP being in the Hetzner firewall.
+          mode: "true"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+        proxyConfig:
+          # Subnet router and ingress/egress proxies run as
+          # Deployments — same resource profile.
+          image:
+            repository: tailscale/tailscale
+            tag: v1.78.1
+          defaultTags:
+            - tag:k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

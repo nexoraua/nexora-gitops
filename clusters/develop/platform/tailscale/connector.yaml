@@ -1,0 +1,18 @@
+# Tailscale Connector advertising the Hetzner private network of the
+# develop cluster into the nxua tailnet. After this is applied, go to
+# https://login.tailscale.com/admin/machines, find this device, and
+# approve the advertised routes (10.40.0.0/16).
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: nexora-develop-subnet
+spec:
+  hostname: nexora-develop-subnet-router
+  tags:
+    - tag:k8s
+    - tag:nexora-develop
+  subnetRouter:
+    advertiseRoutes:
+      # Hetzner private network (matches network_ipv4_cidr in
+      # nexora-infra/environments/develop/main.tf).
+      - 10.40.0.0/16
