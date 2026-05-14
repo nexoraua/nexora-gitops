@@ -7,7 +7,7 @@ metadata:
   name: nexora-business-develop
   namespace: postgresql
 spec:
-  instances: 2
+  instances: 1   # develop has only one nodepool=database node; staging/prod use 2 + 3
   imageName: ghcr.io/cloudnative-pg/postgresql:18.0
   primaryUpdateStrategy: unsupervised
   enableSuperuserAccess: true
