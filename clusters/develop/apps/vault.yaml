@@ -60,8 +60,9 @@ spec:
           # control-plane-1). For 3 raft replicas we must tolerate the
           # system + database taints so the StatefulSet can spread across
           # worker-1 / system-1 / stateful-1 (hard pod anti-affinity by
-          # hostname satisfies). Control-plane stays excluded.
-          tolerations:
+          # hostname satisfies). Control-plane stays excluded. The vault
+          # chart expects tolerations as a string, not an inline list.
+          tolerations: |
             - key: nodepool
               operator: Equal
               value: system
