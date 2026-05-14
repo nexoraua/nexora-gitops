@@ -28,11 +28,11 @@ spec:
           annotations:
             cert-manager.io/cluster-issuer: letsencrypt-prod
           hosts:
-            - grafana-dev.nexora.example
+            - grafana.develop.nxua.dev
           tls:
             - secretName: grafana-tls
               hosts:
-                - grafana-dev.nexora.example
+                - grafana.develop.nxua.dev
         # OIDC to Authentik — fully wired up once Authentik is bootstrapped.
         # See clusters/develop/apps/authentik.yaml.
         grafana.ini:
@@ -43,9 +43,9 @@ spec:
             client_id: $__file{/etc/grafana/secrets/oidc-client-id}
             client_secret: $__file{/etc/grafana/secrets/oidc-client-secret}
             scopes: openid profile email groups
-            auth_url: https://auth-dev.nexora.example/application/o/authorize/
-            token_url: https://auth-dev.nexora.example/application/o/token/
-            api_url: https://auth-dev.nexora.example/application/o/userinfo/
+            auth_url: https://auth.develop.nxua.dev/application/o/authorize/
+            token_url: https://auth.develop.nxua.dev/application/o/token/
+            api_url: https://auth.develop.nxua.dev/application/o/userinfo/
             role_attribute_path: contains(groups[*], 'admin-super') && 'Admin' || contains(groups[*], 'infra-ops') && 'Editor' || 'Viewer'
         datasources:
           datasources.yaml:

@@ -37,11 +37,11 @@ spec:
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
             hosts:
-              - auth-dev.nexora.example
+              - auth.develop.nxua.dev
             tls:
               - secretName: authentik-tls
                 hosts:
-                  - auth-dev.nexora.example
+                  - auth.develop.nxua.dev
           resources:
             requests:
               cpu: 200m

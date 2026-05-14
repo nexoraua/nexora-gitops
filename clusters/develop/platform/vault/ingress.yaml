@@ -1,4 +1,4 @@
-# Vault UI exposed via Traefik on vault-dev.nexora.example.
+# Vault UI exposed via Traefik on vault.develop.nxua.dev.
 # Cloudflare Access sits in front (group: infra-ops, WARP enrolled);
 # Cloudflare configuration lives in nexora-infra/modules/cloudflare/access.tf
 # (Terraform). This manifest only handles the cluster-side IngressRoute
@@ -12,7 +12,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`vault-dev.nexora.example`)
+    - match: Host(`vault.develop.nxua.dev`)
       kind: Rule
       middlewares:
         - name: cloudflare-jwt-assertion
@@ -20,22 +20,9 @@ spec:
       services:
         - name: vault
           port: 8200
-          scheme: https
-          serversTransport: vault-tls
+          scheme: http
   tls:
     secretName: vault-ui-tls
----
-# Hand-off TLS termination to Traefik; Vault pod still listens on HTTPS
-# internally (vault-tls secret), so we explicitly trust the cluster CA.
-apiVersion: traefik.io/v1alpha1
-kind: ServersTransport
-metadata:
-  name: vault-tls
-  namespace: vault-system
-spec:
-  serverName: vault.vault-system.svc
-  rootCAsSecrets:
-    - vault-tls
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -47,9 +34,9 @@ spec:
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
-  commonName: vault-dev.nexora.example
+  commonName: vault.develop.nxua.dev
   dnsNames:
-    - vault-dev.nexora.example
+    - vault.develop.nxua.dev
   duration: 2160h     # 90 days
   renewBefore: 360h   # 15 days
 ---

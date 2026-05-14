@@ -31,9 +31,7 @@ spec:
           image: hashicorp/vault:1.18
           env:
             - name: VAULT_ADDR
-              value: https://vault.vault-system.svc:8200
-            - name: VAULT_CACERT
-              value: /vault/tls/ca.crt
+              value: http://vault.vault-system.svc:8200
             - name: VAULT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -49,10 +47,6 @@ spec:
                 secretKeyRef:
                   name: vault-oidc-client
                   key: client_secret
-          volumeMounts:
-            - name: vault-tls
-              mountPath: /vault/tls
-              readOnly: true
           command:
             - /bin/sh
             - -c
@@ -64,7 +58,7 @@ spec:
 
               echo "==> Configure OIDC against Authentik"
               vault write auth/oidc/config \
-                oidc_discovery_url="https://auth-dev.nexora.example/application/o/vault/" \
+                oidc_discovery_url="https://auth.develop.nxua.dev/application/o/vault/" \
                 oidc_client_id="${OIDC_CLIENT_ID}" \
                 oidc_client_secret="${OIDC_CLIENT_SECRET}" \
                 default_role="infra-readonly"
@@ -101,7 +95,7 @@ spec:
               echo "==> Map Authentik group infra-ops -> infra-admin policy"
               vault write auth/oidc/role/infra-ops \
                 bound_audiences="vault" \
-                allowed_redirect_uris="https://vault-dev.nexora.example/ui/vault/auth/oidc/oidc/callback,https://vault-dev.nexora.example/oidc/callback" \
+                allowed_redirect_uris="https://vault.develop.nxua.dev/ui/vault/auth/oidc/oidc/callback,https://vault.develop.nxua.dev/oidc/callback" \
                 user_claim="email" \
                 groups_claim="groups" \
                 bound_claims='{"groups":["infra-ops"]}' \
@@ -112,7 +106,7 @@ spec:
               echo "==> Map Authentik group infra-readonly -> infra-readonly policy"
               vault write auth/oidc/role/infra-readonly \
                 bound_audiences="vault" \
-                allowed_redirect_uris="https://vault-dev.nexora.example/ui/vault/auth/oidc/oidc/callback,https://vault-dev.nexora.example/oidc/callback" \
+                allowed_redirect_uris="https://vault.develop.nxua.dev/ui/vault/auth/oidc/oidc/callback,https://vault.develop.nxua.dev/oidc/callback" \
                 user_claim="email" \
                 groups_claim="groups" \
                 bound_claims='{"groups":["infra-readonly"]}' \
@@ -150,11 +144,6 @@ spec:
               vault write -f transit/keys/nexora-backups-develop type=aes256-gcm96
 
               echo "==> Done"
-      volumes:
-        - name: vault-tls
-          secret:
-            secretName: vault-tls
-            optional: false
 ---
 apiVersion: v1
 kind: ServiceAccount

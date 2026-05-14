@@ -9,7 +9,7 @@ for pods.
 
 | File | Role |
 | ---- | ---- |
-| `ingress.yaml` | Traefik `IngressRoute` for `vault-dev.nexora.example`, cert-manager `Certificate`, Cloudflare JWT validation middleware |
+| `ingress.yaml` | Traefik `IngressRoute` for `vault.develop.nxua.dev`, cert-manager `Certificate`, Cloudflare JWT validation middleware |
 | `external-secrets.yaml` | `ClusterSecretStore` pointing at Vault KV + initial `ExternalSecret` for the Authentik OIDC client credentials |
 | `oidc-bootstrap.yaml` | One-time bootstrap `Job` that configures OIDC auth method, Kubernetes auth method, policies (`infra-admin`, `infra-readonly`, `nexora-api`, `nexora-admin`), and the Transit engine |
 
@@ -59,7 +59,7 @@ any drift in policies and roles.
 
 | User | Path | Auth |
 | ---- | ---- | ---- |
-| Ops engineer (UI) | `https://vault-dev.nexora.example/ui` → CF Access (group `infra-ops`, WARP) → Vault OIDC → Authentik → policy `infra-admin` or `infra-readonly` | OIDC |
+| Ops engineer (UI) | `https://vault.develop.nxua.dev/ui` → CF Access (group `infra-ops`, WARP) → Vault OIDC → Authentik → policy `infra-admin` or `infra-readonly` | OIDC |
 | External Secrets Operator | in-cluster `https://vault.vault-system.svc:8200` | Kubernetes ServiceAccount → role `external-secrets` → policy `infra-readonly` |
 | Backend app pod | same | role `nexora-api` → policy `nexora-api` (KV read for own paths + Transit encrypt/decrypt) |
 | Admin app pod | same | role `nexora-admin` → policy `nexora-admin` |
