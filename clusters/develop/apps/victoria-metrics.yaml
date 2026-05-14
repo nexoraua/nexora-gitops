@@ -15,9 +15,18 @@ spec:
     chart: victoria-metrics-k8s-stack
     targetRevision: 0.30.0
     helm:
+      # Short release name "vm" so the chart's deeply-nested service
+      # names (vmselect-vm, vminsert-vm, etc.) stay under the 63-char
+      # Kubernetes resource name limit. Without these overrides the
+      # bundled ServiceMonitors generated names like
+      # "victoria-metrics-victoria-metrics-k8s-stack-kube-controller-manager"
+      # which the API server rejects.
+      releaseName: vm
       values: |
-        # Disable bundled chart components we replace with explicit configs
-        # or do not need on develop.
+        nameOverride: vm
+        fullnameOverride: vm
+        # Bundled components we replace with explicit configs or do not
+        # need on develop.
         grafana:
           enabled: false
         alertmanager:
@@ -28,6 +37,27 @@ spec:
           enabled: false      # provided by kube-prometheus-stack
         defaultRules:
           create: true
+        # Disable kube-component scrape targets — Prometheus from
+        # kube-prometheus-stack already scrapes them and remote-writes
+        # the samples to vminsert. Keeping them enabled here causes
+        # duplicate ServiceMonitor names and (with this chart's nested
+        # release name) overruns the 63-char limit.
+        kubeApiServer:
+          enabled: false
+        kubelet:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        coreDns:
+          enabled: false
+        kubeDns:
+          enabled: false
         vmcluster:
           enabled: true
           spec:
@@ -37,8 +67,8 @@ spec:
               replicaCount: 1
               storage:
                 volumeClaimTemplate:
-                  storageClassName: hcloud-volumes
                   spec:
+                    storageClassName: hcloud-volumes
                     accessModes: ["ReadWriteOnce"]
                     resources:
                       requests:
@@ -54,8 +84,8 @@ spec:
               cacheMountPath: /select-cache
               storage:
                 volumeClaimTemplate:
-                  storageClassName: hcloud-volumes
                   spec:
+                    storageClassName: hcloud-volumes
                     accessModes: ["ReadWriteOnce"]
                     resources:
                       requests:

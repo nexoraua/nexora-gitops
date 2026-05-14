@@ -37,17 +37,6 @@ spec:
         effect: NoSchedule
   monitoring:
     enablePodMonitor: true
-  backup:
-    barmanObjectStore:
-      destinationPath: s3://nexora-develop-cnpg-backups/authentik
-      endpointURL: https://fsn1.your-objectstorage.com
-      s3Credentials:
-        accessKeyId:
-          name: cnpg-authentik-s3-backup
-          key: ACCESS_KEY_ID
-        secretAccessKey:
-          name: cnpg-authentik-s3-backup
-          key: SECRET_ACCESS_KEY
-      wal:
-        compression: gzip
-    retentionPolicy: "30d"
+  # Backups disabled for develop until a Hetzner Object Storage bucket
+  # + S3 credentials are provisioned. Staging/production re-enable
+  # `backup.barmanObjectStore` against nexora-cnpg-backups-<env>.

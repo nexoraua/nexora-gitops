@@ -17,9 +17,9 @@ spec:
     - https://github.com/dragonflydb/dragonfly-operator.git
     - https://charts.external-secrets.io
     - https://helm.releases.hashicorp.com
-    - https://linkerd.github.io/linkerd2
     - https://argoproj.github.io/argo-helm
     - https://charts.hetzner.cloud
+    - https://github.com/rabbitmq/cluster-operator.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'

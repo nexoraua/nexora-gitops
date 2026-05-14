@@ -1,3 +1,6 @@
+# Tempo — distributed tracing backend. On develop we use the local
+# filesystem on a hcloud PVC; staging/production will swap to S3
+# (Hetzner Object Storage) once those buckets exist.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -16,20 +19,14 @@ spec:
         tempo:
           storage:
             trace:
-              backend: s3
-              s3:
-                bucket: nexora-develop-tempo
-                endpoint: fsn1.your-objectstorage.com
-                region: fsn1
-                forcepathstyle: true
-                access_key: ${TEMPO_S3_ACCESS_KEY}
-                secret_key: ${TEMPO_S3_SECRET_KEY}
-                insecure: false
+              backend: local
+              local:
+                path: /var/tempo/traces
           retention: 168h     # 7 days on develop; prod retention is 30d
         persistence:
           enabled: true
           storageClass: hcloud-volumes
-          size: 10Gi
+          size: 20Gi
         resources:
           requests:
             cpu: 100m

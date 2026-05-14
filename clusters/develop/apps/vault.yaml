@@ -92,7 +92,6 @@ spec:
     managedNamespaceMetadata:
       labels:
         pod-security.kubernetes.io/enforce: baseline
-        linkerd.io/inject: enabled
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
