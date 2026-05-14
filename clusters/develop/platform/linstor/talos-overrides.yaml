@@ -30,5 +30,12 @@ spec:
         kind: DaemonSet
         name: linstor-satellite
       patch: |
+        # Remove drbd-module-loader (index 0) — DRBD loaded at Talos boot.
+        - op: remove
+          path: /spec/template/spec/initContainers/0
+        # Remove drbd-shutdown-guard (now index 0 after previous remove)
+        # — hangs forever on "Connect to systemd bus" because Talos has
+        # no systemd. Loss of graceful DRBD shutdown is acceptable on
+        # develop; Talos's reboot sequence already drains pods first.
         - op: remove
           path: /spec/template/spec/initContainers/0
