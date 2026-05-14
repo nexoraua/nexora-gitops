@@ -56,6 +56,20 @@ spec:
             enabled: true
             size: 10Gi
             storageClass: hcloud-volumes
+          # Develop has 4 nodes (worker-1, system-1, stateful-1,
+          # control-plane-1). For 3 raft replicas we must tolerate the
+          # system + database taints so the StatefulSet can spread across
+          # worker-1 / system-1 / stateful-1 (hard pod anti-affinity by
+          # hostname satisfies). Control-plane stays excluded.
+          tolerations:
+            - key: nodepool
+              operator: Equal
+              value: system
+              effect: NoSchedule
+            - key: nodepool
+              operator: Equal
+              value: database
+              effect: NoSchedule
           resources:
             requests:
               cpu: 250m
