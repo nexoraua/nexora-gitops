@@ -39,7 +39,7 @@ spec:
       hostNetwork: false
       containers:
         - name: tailscale
-          image: tailscale/tailscale:v1.78.1
+          image: tailscale/tailscale:v1.96.5
           imagePullPolicy: IfNotPresent
           env:
             - name: TS_KUBE_SECRET
