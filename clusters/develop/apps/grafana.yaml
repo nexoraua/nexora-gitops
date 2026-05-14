@@ -33,15 +33,18 @@ spec:
             - secretName: grafana-tls
               hosts:
                 - grafana.develop.nxua.dev
-        # OIDC to Authentik — fully wired up once Authentik is bootstrapped.
-        # See clusters/develop/apps/authentik.yaml.
+        # OIDC to Authentik — disabled until the Authentik OIDC provider
+        # for Grafana is created and its client id/secret are mounted at
+        # /etc/grafana/secrets/oidc-client-{id,secret}. With it enabled
+        # but no client_id file present, Grafana refuses to start
+        # (got error while expanding auth.generic_oauth.client_id with
+        # expander 'file'). Flip enabled→true in the same commit that
+        # mounts those Secret keys.
         grafana.ini:
           auth.generic_oauth:
-            enabled: true
+            enabled: false
             name: Authentik
             allow_sign_up: true
-            client_id: $__file{/etc/grafana/secrets/oidc-client-id}
-            client_secret: $__file{/etc/grafana/secrets/oidc-client-secret}
             scopes: openid profile email groups
             auth_url: https://auth.develop.nxua.dev/application/o/authorize/
             token_url: https://auth.develop.nxua.dev/application/o/token/
