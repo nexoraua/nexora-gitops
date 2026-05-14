@@ -1,0 +1,31 @@
+# Talos-specific patches to LINSTOR satellite pods.
+#
+# Talos doesn't ship systemd (uses its own machined PID 1), so the
+# `/run/systemd/system/` host path that the drbd-shutdown-guard init
+# container mounts doesn't exist. The volume's `hostPath.type=Directory`
+# check fails, kubelet refuses to start the pod, and ALL init
+# containers (including drbd-module-loader) stay in PodInitializing.
+#
+# Fix: replace the run-systemd-system volume with an emptyDir on Talos
+# nodes. The drbd-shutdown-guard then runs but its systemd unit
+# registration is a no-op (no systemd to talk to) — Talos handles
+# planned reboots itself, so we don't lose anything important.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: talos-overrides
+spec:
+  patches:
+    - target:
+        kind: Pod
+        name: satellite
+      patch: |
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: satellite
+        spec:
+          volumes:
+            - name: run-systemd-system
+              hostPath: null
+              emptyDir: {}
