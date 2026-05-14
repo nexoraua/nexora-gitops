@@ -1,20 +1,35 @@
 # Talos-specific patches to LINSTOR satellite pods.
 #
-# Talos doesn't ship systemd (uses its own machined PID 1), so the
-# `/run/systemd/system/` host path that the drbd-shutdown-guard init
-# container mounts doesn't exist. The volume's `hostPath.type=Directory`
-# check fails, kubelet refuses to start the pod, and ALL init
-# containers (including drbd-module-loader) stay in PodInitializing.
+# Two things break with the upstream Piraeus satellite spec on Talos:
 #
-# Fix: replace the run-systemd-system volume with an emptyDir on Talos
-# nodes. The drbd-shutdown-guard then runs but its systemd unit
-# registration is a no-op (no systemd to talk to) — Talos handles
-# planned reboots itself, so we don't lose anything important.
+# 1. `/run/systemd/system/` hostPath. Talos has no systemd; the
+#    drbd-shutdown-guard's hostPath.type=Directory check fails and
+#    kubelet refuses to start ANY container in the pod. Override the
+#    volume to emptyDir. drbd-shutdown-guard then runs but its
+#    systemd-unit registration is a silent no-op — Talos handles
+#    shutdowns through its own sequence anyway.
+#
+# 2. AppArmor + SELinux capability application. The init containers
+#    request CAP_SYS_MODULE (to modprobe drbd) and CAP_SYS_ADMIN
+#    (for shutdown-guard). Talos' default AppArmor profile blocks
+#    privileged capability application from non-trusted containers,
+#    and the `seLinuxOptions.type=spc_t` from the upstream spec is
+#    a CoreOS-specific type that Talos doesn't recognize, causing
+#    runc to fail with "can't apply capabilities: operation not
+#    permitted". Annotate the pod to run unconfined.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
   name: talos-overrides
 spec:
+  podTemplate:
+    metadata:
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/drbd-module-loader: unconfined
+        container.apparmor.security.beta.kubernetes.io/drbd-shutdown-guard: unconfined
+        container.apparmor.security.beta.kubernetes.io/setup-lvm-configuration: unconfined
+        container.apparmor.security.beta.kubernetes.io/linstor-satellite: unconfined
+        container.apparmor.security.beta.kubernetes.io/drbd-reactor: unconfined
   patches:
     - target:
         kind: Pod
