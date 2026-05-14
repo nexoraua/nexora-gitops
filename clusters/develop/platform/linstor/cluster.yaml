@@ -1,16 +1,12 @@
-# LinstorCluster — tells Piraeus to provision a LINSTOR controller +
-# CSI driver. On develop we run a single-replica controller (etcd
-# backing); staging/prod scale this to 3.
+# LinstorCluster — declares the LINSTOR controller + CSI deployments.
+# Per-node satellite placement is controlled by LinstorSatelliteConfiguration
+# (satellites.yaml) — that's where nodepool selectors + tolerations live.
 apiVersion: piraeus.io/v1
 kind: LinstorCluster
 metadata:
   name: linstorcluster
 spec:
-  # Default placement: schedule LINSTOR satellite on every worker node
-  # (everything that isn't the control-plane).
-  nodeSelector:
-    kubernetes.io/os: linux
-  # Run LINSTOR's API server on the system nodepool (lighter load).
+  # Pin the LINSTOR controller to the system nodepool.
   controller:
     podTemplate:
       spec:
@@ -31,8 +27,8 @@ spec:
             operator: Equal
             value: system
             effect: NoSchedule
-  # CSI node-plugin runs on every node that may host a PVC consumer.
-  # The DaemonSet tolerations let it onto the database + system pools.
+  # CSI node-plugin DaemonSet runs on every worker that may host a
+  # PVC consumer (system, workers, database).
   csiNode:
     podTemplate:
       spec:

@@ -1,15 +1,14 @@
-# Per-nodepool LinstorSatelliteConfiguration — each carves out a
-# filesystem-backed thin-provisioned LINSTOR storage pool sized for
-# that pool's role. Files live under /var/lib/piraeus-datastore on
-# every satellite node; Talos persists that directory across reboots
-# in its EPHEMERAL partition.
+# Per-nodepool LinstorSatelliteConfiguration. The operator creates a
+# LinstorSatellite (and underlying DaemonSet pod) only for nodes that
+# match at least one of these selectors AND for which the satellite
+# pod can actually schedule (tolerations + node selector aligned).
 #
-# Why fileThin instead of file: sparse-allocation lets us over-commit
-# the pool (PVCs request more than the file space actually used).
-# Reality check at run time stays bounded by the directory size, so
-# we still need to right-size pool capacity per nodepool.
+# Why fileThin: sparse-allocation lets us over-commit the pool. The
+# fileThin pool is just a directory on /var/lib/piraeus-datastore;
+# Talos persists /var across reboots so the pool survives node
+# upgrades.
 ---
-# workers (cx33, ~74 GB ephemeral) — 50 GB for app workloads.
+# workers (cx33, ~74 GB ephemeral)
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -22,9 +21,8 @@ spec:
       fileThinPool:
         directory: /var/lib/piraeus-datastore
 ---
-# system pool (cx33, ~74 GB) — 50 GB for platform infra workloads
-# (Vault stays on hcloud-volumes per design, so this is mostly
-# Dragonfly + ESO temp + future system-pinned PVCs).
+# system pool (cx33, ~74 GB). Tainted nodepool=system — satellite
+# pod needs the toleration to schedule.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -32,13 +30,19 @@ metadata:
 spec:
   nodeSelector:
     nodepool: system
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
   storagePools:
     - name: pool0
       fileThinPool:
         directory: /var/lib/piraeus-datastore
 ---
-# stateful pool (cx43, ~93 GB) — 60 GB for CNPG clusters + VM /
-# Loki / Tempo / Prometheus data.
+# stateful pool (cx43, ~93 GB). Tainted nodepool=database — same.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -46,6 +50,13 @@ metadata:
 spec:
   nodeSelector:
     nodepool: database
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: database
+          effect: NoSchedule
   storagePools:
     - name: pool0
       fileThinPool:
