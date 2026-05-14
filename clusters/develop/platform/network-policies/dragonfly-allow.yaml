@@ -7,9 +7,11 @@ metadata:
   name: dragonfly-cache-ingress
   namespace: dragonfly
 spec:
+  # Cilium's default labelPrefixFile excludes the plain `app` label
+  # from endpoint identities — match the standard label instead.
   podSelector:
     matchLabels:
-      app: nexora-cache
+      app.kubernetes.io/name: dragonfly
   policyTypes:
     - Ingress
   ingress:
@@ -39,7 +41,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: nexora-cache
+      app.kubernetes.io/name: dragonfly
   policyTypes:
     - Egress
   egress:
