@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: https://victoriametrics.github.io/helm-charts
     chart: victoria-metrics-k8s-stack
-    targetRevision: 0.*.*
+    targetRevision: 0.30.0
     helm:
       values: |
         # Disable bundled chart components we replace with explicit configs

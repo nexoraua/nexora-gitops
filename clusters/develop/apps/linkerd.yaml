@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://linkerd.github.io/linkerd2
     chart: linkerd-control-plane
-    targetRevision: 2024.*.*
+    targetRevision: 2024.12.4
     helm:
       values: |
         identity:

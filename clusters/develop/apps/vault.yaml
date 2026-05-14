@@ -11,11 +11,17 @@ spec:
   source:
     repoURL: https://helm.releases.hashicorp.com
     chart: vault
-    targetRevision: 0.28.*
+    targetRevision: 0.28.1
     helm:
       values: |
+        # On develop we run Vault with TLS disabled inside the cluster and
+        # rely on Linkerd mTLS for service-to-service confidentiality. The
+        # UI is fronted by Traefik with a Let's Encrypt cert, so external
+        # traffic is still TLS. On production we re-enable in-pod TLS with
+        # certs issued by cert-manager (see platform/vault/ once the prod
+        # cluster comes online).
         global:
-          tlsDisable: false
+          tlsDisable: true
         server:
           ha:
             enabled: true
@@ -26,22 +32,20 @@ spec:
               config: |
                 ui = true
                 listener "tcp" {
-                  tls_disable = 0
-                  address = "[::]:8200"
+                  tls_disable = 1
+                  address     = "[::]:8200"
                   cluster_address = "[::]:8201"
-                  tls_cert_file = "/vault/userconfig/vault-tls/tls.crt"
-                  tls_key_file  = "/vault/userconfig/vault-tls/tls.key"
                 }
                 storage "raft" {
                   path = "/vault/data"
                   retry_join {
-                    leader_api_addr = "https://vault-0.vault-internal:8200"
+                    leader_api_addr = "http://vault-0.vault-internal:8200"
                   }
                   retry_join {
-                    leader_api_addr = "https://vault-1.vault-internal:8200"
+                    leader_api_addr = "http://vault-1.vault-internal:8200"
                   }
                   retry_join {
-                    leader_api_addr = "https://vault-2.vault-internal:8200"
+                    leader_api_addr = "http://vault-2.vault-internal:8200"
                   }
                 }
                 service_registration "kubernetes" {}
@@ -58,16 +62,6 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
-          extraEnvironmentVars:
-            VAULT_CACERT: /vault/userconfig/vault-tls/ca.crt
-          volumes:
-            - name: vault-tls
-              secret:
-                secretName: vault-tls
-          volumeMounts:
-            - mountPath: /vault/userconfig/vault-tls
-              name: vault-tls
-              readOnly: true
         ui:
           enabled: true
           serviceType: ClusterIP
@@ -83,6 +77,7 @@ spec:
     managedNamespaceMetadata:
       labels:
         pod-security.kubernetes.io/enforce: baseline
+        linkerd.io/inject: enabled
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true

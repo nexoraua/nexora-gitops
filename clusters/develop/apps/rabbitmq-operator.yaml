@@ -9,7 +9,7 @@ spec:
   project: platform
   source:
     repoURL: https://github.com/rabbitmq/cluster-operator.git
-    targetRevision: v2.13.*
+    targetRevision: v2.13.0
     path: config/installation
   destination:
     server: https://kubernetes.default.svc

@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://grafana.github.io/helm-charts
     chart: grafana
-    targetRevision: 8.*.*
+    targetRevision: 8.5.4
     helm:
       values: |
         replicas: 1

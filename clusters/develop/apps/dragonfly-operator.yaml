@@ -9,7 +9,7 @@ spec:
   project: platform
   source:
     repoURL: https://github.com/dragonflydb/dragonfly-operator.git
-    targetRevision: v1.1.*
+    targetRevision: v1.1.11
     path: manifests
   destination:
     server: https://kubernetes.default.svc
