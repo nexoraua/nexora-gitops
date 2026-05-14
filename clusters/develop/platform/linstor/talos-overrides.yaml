@@ -1,6 +1,6 @@
 # Talos-specific patches to LINSTOR satellite pods.
 #
-# Two things break with the upstream Piraeus satellite spec on Talos:
+# Three things break with the upstream Piraeus satellite spec on Talos:
 #
 # 1. `/run/systemd/system/` hostPath. Talos has no systemd; the
 #    drbd-shutdown-guard's hostPath.type=Directory check fails and
@@ -9,14 +9,16 @@
 #    systemd-unit registration is a silent no-op — Talos handles
 #    shutdowns through its own sequence anyway.
 #
-# 2. AppArmor + SELinux capability application. The init containers
-#    request CAP_SYS_MODULE (to modprobe drbd) and CAP_SYS_ADMIN
-#    (for shutdown-guard). Talos' default AppArmor profile blocks
-#    privileged capability application from non-trusted containers,
-#    and the `seLinuxOptions.type=spc_t` from the upstream spec is
-#    a CoreOS-specific type that Talos doesn't recognize, causing
-#    runc to fail with "can't apply capabilities: operation not
-#    permitted". Annotate the pod to run unconfined.
+# 2. AppArmor profile. Talos's default container profile blocks the
+#    init containers from applying CAP_SYS_MODULE. Annotate every
+#    container to run AppArmor unconfined.
+#
+# 3. SELinux type spc_t. The upstream spec hard-codes seLinuxOptions
+#    of type=spc_t (a CoreOS/Fedora "super privileged container"
+#    type). Talos's SELinux policy doesn't define spc_t, so runc
+#    fails with "unable to apply caps: operation not permitted".
+#    Strip the seLinuxOptions field from every init/main container
+#    so kubelet uses Talos's default container_t.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -35,12 +37,86 @@ spec:
         kind: Pod
         name: satellite
       patch: |
-        apiVersion: v1
-        kind: Pod
-        metadata:
-          name: satellite
-        spec:
-          volumes:
-            - name: run-systemd-system
-              hostPath: null
+        - op: replace
+          path: /spec/volumes
+          value:
+            - name: file-pool-0
+              hostPath:
+                path: /var/lib/piraeus-datastore
+                type: DirectoryOrCreate
+            - name: lib-modules
+              hostPath:
+                path: /lib/modules
+                type: Directory
+            - name: usr-src
               emptyDir: {}
+            - name: dev
+              hostPath:
+                path: /dev
+                type: Directory
+            - name: etc-lvm-archive
+              hostPath:
+                path: /etc/lvm/archive
+                type: DirectoryOrCreate
+            - name: etc-lvm
+              hostPath:
+                path: /etc/lvm
+                type: DirectoryOrCreate
+            - name: etc-lvm-backup
+              hostPath:
+                path: /etc/lvm/backup
+                type: DirectoryOrCreate
+            - name: var-lib-linstor-d
+              hostPath:
+                path: /var/lib/linstor.d
+                type: DirectoryOrCreate
+            - name: var-lib-drbd
+              hostPath:
+                path: /var/lib/drbd
+                type: DirectoryOrCreate
+            - name: run-systemd-system
+              emptyDir: {}
+            - name: run-drbd-shutdown-guard
+              hostPath:
+                path: /run/drbd-shutdown-guard
+                type: DirectoryOrCreate
+            - name: systemd-bus-socket
+              emptyDir: {}
+            - name: run-lock-lvm
+              hostPath:
+                path: /run/lock/lvm
+                type: DirectoryOrCreate
+            - name: run-lvm
+              hostPath:
+                path: /run/lvm
+                type: DirectoryOrCreate
+            - name: run-udev
+              hostPath:
+                path: /run/udev
+                type: Directory
+            - name: var-log-linstor-satellite
+              hostPath:
+                path: /var/log/linstor-satellite
+                type: DirectoryOrCreate
+            - name: satellite-config
+              configMap:
+                name: linstor-satellite-config
+            - name: reactor-config
+              configMap:
+                name: drbd-reactor-config
+            - name: container-etc-lvm
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+            - name: run
+              emptyDir: {}
+        - op: remove
+          path: /spec/initContainers/0/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/initContainers/1/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/initContainers/2/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/containers/0/securityContext/seLinuxOptions
+        - op: remove
+          path: /spec/containers/1/securityContext/seLinuxOptions
