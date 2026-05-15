@@ -25,6 +25,11 @@ spec:
         values: |
           controller:
             type: daemonset
+            # Alloy is the per-node telemetry collector — it must run on
+            # EVERY node, including the tainted control-plane / system /
+            # database pools. Without this it lands only on worker-1.
+            tolerations:
+              - operator: Exists
           alloy:
             mounts:
               varlog: true     # tail container logs

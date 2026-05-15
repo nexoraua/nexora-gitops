@@ -42,11 +42,15 @@ metadata:
   namespace: monitoring
 spec:
   # SingleBinary on develop; production splits read/write/backend paths
-  # and runs separate PDBs per component.
+  # and runs separate PDBs per component. The component label scopes
+  # this to the loki-0 StatefulSet — without it the PDB also catches
+  # the loki-canary DaemonSet + loki-gateway Deployment and computes
+  # to 0 allowed disruptions.
   maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: loki
+      app.kubernetes.io/component: single-binary
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
