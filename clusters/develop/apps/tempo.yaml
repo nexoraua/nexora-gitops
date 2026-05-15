@@ -36,6 +36,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
+  # volumeClaimTemplates are immutable after creation and Kubernetes
+  # defaults them (apiVersion/kind/volumeMode/status), so the live
+  # StatefulSet never byte-matches the chart output — a known ArgoCD
+  # normalization gap that otherwise leaves the app perpetually OutOfSync.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      name: tempo
+      jsonPointers:
+        - /spec/volumeClaimTemplates
   syncPolicy:
     automated:
       prune: true
