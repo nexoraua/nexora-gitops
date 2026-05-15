@@ -4,6 +4,10 @@
 #   - metrics  → vminsert (VictoriaMetrics)
 #   - logs     → Loki
 #   - traces   → Tempo
+#
+# Multi-source Application: source 1 is the upstream Helm chart, source
+# 2 delivers the alloy-config ConfigMap from this repo (the chart is
+# told configMap.create=false and points at that ConfigMap by name).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -13,38 +17,41 @@ metadata:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: observability
-  source:
-    repoURL: https://grafana.github.io/helm-charts
-    chart: alloy
-    targetRevision: 0.9.2
-    helm:
-      values: |
-        controller:
-          type: daemonset
-        alloy:
-          mounts:
-            varlog: true     # tail container logs
-            dockercontainers: true
-          configMap:
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 0.9.2
+      helm:
+        values: |
+          controller:
+            type: daemonset
+          alloy:
+            mounts:
+              varlog: true     # tail container logs
+              dockercontainers: true
+            configMap:
+              create: false
+              name: alloy-config   # delivered by source 2 below
+            extraPorts:
+              - name: otlp-grpc
+                port: 4317
+                targetPort: 4317
+                protocol: TCP
+              - name: otlp-http
+                port: 4318
+                targetPort: 4318
+                protocol: TCP
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+          crds:
             create: false
-            name: alloy-config   # provided by clusters/develop/platform/alloy/
-          extraPorts:
-            - name: otlp-grpc
-              port: 4317
-              targetPort: 4317
-              protocol: TCP
-            - name: otlp-http
-              port: 4318
-              targetPort: 4318
-              protocol: TCP
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              memory: 512Mi
-        crds:
-          create: false
+    - repoURL: https://github.com/nexoraua/nexora-gitops.git
+      targetRevision: main
+      path: clusters/develop/platform/alloy
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

@@ -1,6 +1,18 @@
-# VictoriaMetrics cluster — primary metrics backend, 13-month retention.
-# Receives remote_write from Prometheus (system metrics) and from
-# Grafana Alloy (app OTLP metrics + scrape targets).
+# VictoriaMetrics — the single metrics backend for Nexora.
+#
+# victoria-metrics-k8s-stack bundles, on develop:
+#   - vmcluster  (vmstorage / vminsert / vmselect)  — 13-month retention
+#   - vmalert + alertmanager                        — alerting
+#   - kube-state-metrics                            — k8s object metrics
+#   - prometheus-node-exporter                      — node metrics
+#
+# vmagent is disabled — Grafana Alloy (apps/alloy.yaml) does ALL
+# scraping via prometheus.io/scrape annotations and remote-writes to
+# vminsert. kube-state-metrics + node-exporter get those annotations
+# here so Alloy picks them up.
+#
+# vmselect speaks the Prometheus query API, so Grafana and the Lens
+# IDE point straight at it — there is no separate Prometheus.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -8,6 +20,7 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
 spec:
   project: observability
   source:
@@ -15,33 +28,46 @@ spec:
     chart: victoria-metrics-k8s-stack
     targetRevision: 0.30.0
     helm:
-      # Short release name "vm" so the chart's deeply-nested service
-      # names (vmselect-vm, vminsert-vm, etc.) stay under the 63-char
-      # Kubernetes resource name limit. Without these overrides the
-      # bundled ServiceMonitors generated names like
-      # "victoria-metrics-victoria-metrics-k8s-stack-kube-controller-manager"
-      # which the API server rejects.
+      # Short release name "vm" keeps the chart's nested service names
+      # (vmselect-vm, vminsert-vm, ...) under the 63-char limit.
       releaseName: vm
       values: |
         nameOverride: vm
         fullnameOverride: vm
-        # Bundled components we replace with explicit configs or do not
-        # need on develop.
         grafana:
-          enabled: false
-        alertmanager:
-          enabled: true
-        kubeStateMetrics:
-          enabled: false      # provided by kube-prometheus-stack
-        nodeExporter:
-          enabled: false      # provided by kube-prometheus-stack
+          enabled: false      # standalone app — apps/grafana.yaml
         defaultRules:
-          create: true
-        # Disable kube-component scrape targets — Prometheus from
-        # kube-prometheus-stack already scrapes them and remote-writes
-        # the samples to vminsert. Keeping them enabled here causes
-        # duplicate ServiceMonitor names and (with this chart's nested
-        # release name) overruns the 63-char limit.
+          create: true        # vmalert recording + alerting rules
+        # --- kube-state-metrics: keep, annotate for Alloy ---
+        kubeStateMetrics:
+          enabled: true
+        kube-state-metrics:
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "8080"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+        # --- node-exporter: keep, annotate for Alloy, tolerate taints ---
+        nodeExporter:
+          enabled: true
+        prometheus-node-exporter:
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9100"
+          tolerations:
+            - operator: Exists
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+        # kube-control-plane scrape targets — Alloy/annotations cover
+        # what we need; the chart's ServiceMonitors would need vmagent.
         kubeApiServer:
           enabled: false
         kubelet:
@@ -93,7 +119,7 @@ spec:
             vminsert:
               replicaCount: 1
         vmagent:
-          enabled: false       # replaced by Grafana Alloy on Nexora
+          enabled: false       # scraping is done by Grafana Alloy
         vmalert:
           enabled: true
           spec:

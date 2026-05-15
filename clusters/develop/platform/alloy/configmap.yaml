@@ -1,6 +1,15 @@
-# Grafana Alloy config — unified telemetry pipeline.
-# Apps push OTLP (gRPC :4317, HTTP :4318); Alloy also scrapes
-# Prometheus-annotated pods and tails container logs.
+# Grafana Alloy config — unified telemetry pipeline for Nexora.
+#
+# Metrics:
+#   - scrapes Prometheus-annotated pods, kube-state-metrics, node-exporter
+#   - receives OTLP metrics pushed by apps
+#   all forwarded to vminsert (VictoriaMetrics cluster).
+# Logs:   tails every pod's container logs -> Loki.
+# Traces: receives OTLP traces from apps -> Tempo.
+#
+# VictoriaMetrics is the single metrics backend; vmselect exposes a
+# Prometheus-compatible query API, so Lens / Grafana point straight at
+# it — there is no separate Prometheus instance.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,13 +22,168 @@ data:
       format = "json"
     }
 
-    // ---------- METRICS ----------
+    // ===================== METRICS BACKEND =====================
     prometheus.remote_write "vm" {
       endpoint {
         url = "http://vminsert-vm.monitoring.svc:8480/insert/0/prometheus/api/v1/write"
       }
     }
 
+    // ===================== POD DISCOVERY =======================
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+
+    // --- Prometheus-annotated application pods ---
+    // Keeps pods with prometheus.io/scrape=true, EXCLUDING the
+    // kube-state-metrics + node-exporter pods (scraped by dedicated
+    // jobs below so their relabeling can differ).
+    discovery.relabel "annotated_pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        regex         = "true"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        regex         = "kube-state-metrics|prometheus-node-exporter"
+        action        = "drop"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+        regex         = "(.+)"
+        target_label  = "__metrics_path__"
+        action        = "replace"
+      }
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+        target_label  = "__address__"
+        replacement   = "$1:$2"
+        action        = "replace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scheme"]
+        regex         = "(https?)"
+        target_label  = "__scheme__"
+        action        = "replace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "kubernetes_node"
+      }
+    }
+
+    prometheus.scrape "annotated_pods" {
+      targets    = discovery.relabel.annotated_pods.output
+      forward_to = [prometheus.remote_write.vm.receiver]
+    }
+
+    // --- kube-state-metrics ---
+    discovery.relabel "kube_state_metrics" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        regex         = "true"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        regex         = "kube-state-metrics"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+        target_label  = "__address__"
+        replacement   = "$1:$2"
+        action        = "replace"
+      }
+    }
+
+    prometheus.scrape "kube_state_metrics" {
+      targets    = discovery.relabel.kube_state_metrics.output
+      forward_to = [prometheus.remote_write.vm.receiver]
+    }
+
+    // --- node-exporter ---
+    discovery.relabel "node_exporter" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        regex         = "true"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        regex         = "prometheus-node-exporter"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+        target_label  = "__address__"
+        replacement   = "$1:$2"
+        action        = "replace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "node"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "instance"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "kubernetes_node"
+      }
+    }
+
+    prometheus.scrape "node_exporter" {
+      targets    = discovery.relabel.node_exporter.output
+      forward_to = [prometheus.relabel.node_exporter_fixup.receiver]
+    }
+
+    // Normalise the root-fs mountpoint so dashboards keying off "/"
+    // still match (Talos exposes the host root at /var inside the pod).
+    prometheus.relabel "node_exporter_fixup" {
+      forward_to = [prometheus.remote_write.vm.receiver]
+
+      rule {
+        source_labels = ["mountpoint"]
+        regex         = "/var"
+        target_label  = "mountpoint"
+        replacement   = "/"
+        action        = "replace"
+      }
+    }
+
+    // ===================== OTLP INGEST (apps) ==================
     otelcol.receiver.otlp "default" {
       grpc {
         endpoint = "0.0.0.0:4317"
@@ -28,15 +192,17 @@ data:
         endpoint = "0.0.0.0:4318"
       }
       output {
-        metrics = [otelcol.processor.batch.metrics.input]
-        logs    = [otelcol.processor.batch.logs.input]
-        traces  = [otelcol.processor.batch.traces.input]
+        metrics = [otelcol.processor.batch.default.input]
+        logs    = [otelcol.processor.batch.default.input]
+        traces  = [otelcol.processor.batch.default.input]
       }
     }
 
-    otelcol.processor.batch "metrics" {
+    otelcol.processor.batch "default" {
       output {
         metrics = [otelcol.exporter.prometheus.vm.input]
+        logs    = [otelcol.exporter.loki.default.input]
+        traces  = [otelcol.exporter.otlp.tempo.input]
       }
     }
 
@@ -44,45 +210,48 @@ data:
       forward_to = [prometheus.remote_write.vm.receiver]
     }
 
-    // ---------- LOGS ----------
-    otelcol.processor.batch "logs" {
-      output {
-        logs = [otelcol.exporter.loki.default.input]
+    otelcol.exporter.loki "default" {
+      forward_to = [loki.write.default.receiver]
+    }
+
+    otelcol.exporter.otlp "tempo" {
+      client {
+        endpoint = "tempo.monitoring.svc:4317"
+        tls {
+          insecure = true
+        }
       }
     }
 
-    otelcol.exporter.loki "default" {
+    // ===================== POD LOGS -> LOKI ====================
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        target_label  = "app"
+      }
+    }
+
+    loki.source.kubernetes "pod_logs" {
+      targets    = discovery.relabel.pod_logs.output
       forward_to = [loki.write.default.receiver]
     }
 
     loki.write "default" {
       endpoint {
         url = "http://loki-gateway.monitoring.svc/loki/api/v1/push"
-      }
-    }
-
-    // Tail container logs (kubelet) and ship to Loki.
-    discovery.kubernetes "pods" {
-      role = "pod"
-    }
-
-    loki.source.kubernetes "pods" {
-      targets    = discovery.kubernetes.pods.targets
-      forward_to = [loki.write.default.receiver]
-    }
-
-    // ---------- TRACES ----------
-    otelcol.processor.batch "traces" {
-      output {
-        traces = [otelcol.exporter.otlp.tempo.input]
-      }
-    }
-
-    otelcol.exporter.otlp "tempo" {
-      client {
-        endpoint = "tempo-distributor.monitoring.svc:4317"
-        tls {
-          insecure = true
-        }
       }
     }
