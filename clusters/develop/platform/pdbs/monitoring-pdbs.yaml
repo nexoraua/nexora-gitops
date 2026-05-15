@@ -73,16 +73,9 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: grafana
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: alloy-pdb
-  namespace: monitoring
-spec:
-  # Alloy runs as a DaemonSet — PDB protects per-node disruption batches
-  # so log/metric/trace gateways are not all evicted simultaneously.
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: alloy
+# No PDB for Alloy: it is a DaemonSet, and DaemonSets don't implement
+# the scale subresource — the PDB controller can't evaluate the budget
+# ("daemonsets.apps does not implement the scale subresource") and the
+# PDB sits permanently broken. DaemonSet pods follow node lifecycle:
+# a drain removes the pod, a node return re-creates it. No budget
+# needed or possible.
