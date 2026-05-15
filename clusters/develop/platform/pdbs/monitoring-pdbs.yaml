@@ -8,7 +8,7 @@ metadata:
   name: vmstorage-pdb
   namespace: monitoring
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: vmstorage
@@ -19,7 +19,7 @@ metadata:
   name: vmselect-pdb
   namespace: monitoring
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: vmselect
@@ -30,7 +30,7 @@ metadata:
   name: vminsert-pdb
   namespace: monitoring
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: vminsert
@@ -43,7 +43,7 @@ metadata:
 spec:
   # SingleBinary on develop; production splits read/write/backend paths
   # and runs separate PDBs per component.
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: loki

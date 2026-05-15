@@ -10,7 +10,7 @@ spec:
   # Develop runs a single Dragonfly instance; minAvailable: 1 still
   # gates drain so it is rescheduled before the node disappears.
   # Production scales out and uses minAvailable: replicas - 1.
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: nexora-cache

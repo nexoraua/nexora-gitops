@@ -13,7 +13,7 @@ spec:
   # Production runs 3 replicas with quorum queues — keep minAvailable: 1
   # there too, so up to 2 brokers can be drained concurrently only when
   # cluster_partition_handling=pause_minority is verified healthy.
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: nexora-rabbitmq
