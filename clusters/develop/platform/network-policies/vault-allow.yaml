@@ -76,7 +76,7 @@ spec:
         - port: 8200
           protocol: TCP
 ---
-# 3. Egress: DNS only. apiserver egress is handled by the
+# 3. Egress: DNS + Traefik. apiserver egress is handled by the
 # CiliumNetworkPolicy below (toEntities kube-apiserver), because the
 # apiserver pod uses hostNetwork and Cilium's standard NetworkPolicy
 # ipBlock does not match host-identity traffic.
@@ -103,6 +103,16 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    # Vault reaches Authentik for OIDC discovery via the public
+    # hostname auth.develop.nxua.dev, which CoreDNS split-horizon
+    # resolves to the Traefik ClusterIP. Allow egress to Traefik :443.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 443
           protocol: TCP
 ---
 # 4. Egress to kube-apiserver (Cilium-specific). Cilium maps the
