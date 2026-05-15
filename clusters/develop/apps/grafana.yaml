@@ -33,23 +33,32 @@ spec:
             - secretName: grafana-tls
               hosts:
                 - grafana.develop.nxua.dev
-        # OIDC to Authentik — disabled until the Authentik OIDC provider
-        # for Grafana is created and its client id/secret are mounted at
-        # /etc/grafana/secrets/oidc-client-{id,secret}. With it enabled
-        # but no client_id file present, Grafana refuses to start
-        # (got error while expanding auth.generic_oauth.client_id with
-        # expander 'file'). Flip enabled→true in the same commit that
-        # mounts those Secret keys.
+        # OIDC SSO via Authentik. client_id / client_secret come from
+        # the grafana-oidc Secret (ESO <- Vault kv/nexora/develop/oidc/
+        # grafana), mounted as files at /etc/grafana/secrets and read
+        # through grafana.ini's $__file{} expander.
+        extraSecretMounts:
+          - name: oidc-credentials
+            secretName: grafana-oidc
+            mountPath: /etc/grafana/secrets
+            readOnly: true
         grafana.ini:
+          server:
+            root_url: https://grafana.develop.nxua.dev
           auth.generic_oauth:
-            enabled: false
+            enabled: true
             name: Authentik
             allow_sign_up: true
-            scopes: openid profile email groups
+            client_id: $__file{/etc/grafana/secrets/oidc-client-id}
+            client_secret: $__file{/etc/grafana/secrets/oidc-client-secret}
+            scopes: openid profile email
             auth_url: https://auth.develop.nxua.dev/application/o/authorize/
             token_url: https://auth.develop.nxua.dev/application/o/token/
             api_url: https://auth.develop.nxua.dev/application/o/userinfo/
-            role_attribute_path: contains(groups[*], 'admin-super') && 'Admin' || contains(groups[*], 'infra-ops') && 'Editor' || 'Viewer'
+            # Authentik doesn't emit a groups claim by default — until a
+            # groups property mapping is added, everyone signing in maps
+            # to Admin on develop. Tighten on production.
+            role_attribute_path: "'Admin'"
         datasources:
           datasources.yaml:
             apiVersion: 1
