@@ -106,13 +106,16 @@ spec:
           protocol: TCP
     # Vault reaches Authentik for OIDC discovery via the public
     # hostname auth.develop.nxua.dev, which CoreDNS split-horizon
-    # resolves to the Traefik ClusterIP. Allow egress to Traefik :443.
+    # resolves to the Traefik ClusterIP. Cilium DNATs the ClusterIP
+    # to the Traefik pod, whose websecure container port is 8443
+    # (the Service's 443 -> targetPort websecure). The NetworkPolicy
+    # port must be the post-DNAT pod port, so allow 8443.
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: traefik
       ports:
-        - port: 443
+        - port: 8443
           protocol: TCP
 ---
 # 4. Egress to kube-apiserver (Cilium-specific). Cilium maps the
