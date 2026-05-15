@@ -21,6 +21,7 @@ spec:
     - https://charts.hetzner.cloud
     - https://github.com/rabbitmq/cluster-operator.git
     - https://github.com/piraeusdatastore/piraeus-operator.git
+    - https://kubernetes-sigs.github.io/metrics-server
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'

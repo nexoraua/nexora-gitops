@@ -1,0 +1,41 @@
+# Kubernetes metrics-server — powers `kubectl top`, the HPA, and the
+# Lens resource columns. Not bundled by Talos, so installed explicitly.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server
+    chart: metrics-server
+    targetRevision: 3.13.0
+    helm:
+      values: |
+        # Talos serves the kubelet with a certificate that isn't in the
+        # apiserver CA bundle metrics-server validates against; skip TLS
+        # verification of the kubelet (standard for Talos / kubeadm).
+        args:
+          - --kubelet-insecure-tls
+          - --kubelet-preferred-address-types=InternalIP
+        # Develop runs a single replica; production scales to 2 with
+        # anti-affinity. The HA PDB stays off for the single replica.
+        replicas: 1
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
