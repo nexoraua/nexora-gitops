@@ -72,7 +72,10 @@ Mirrors the stack documented in `nexora-docs`:
   forwarding to VictoriaMetrics / Loki / Tempo.
 - **Traefik** as ingress + cert-manager + Let's Encrypt (installed by
   Terraform).
-- **Linkerd** for mTLS service mesh.
+- **Cilium** as the CNI with transparent encryption (WireGuard-based,
+  node-to-node) for in-cluster traffic confidentiality — installed by
+  Terraform. Application-layer mTLS / workload identity (SPIFFE/SPIRE
+  or a service mesh) is an open future decision; no mesh is deployed.
 - **Hetzner Object Storage** (S3 v4 API) + **Hetzner Storage Box**
   (7-year cold archive) — both provisioned in `nexora-infra`, not as
   k8s resources.
@@ -89,7 +92,6 @@ AWS EKS migration target — `nexora-docs/adr/infra/0003-cloud-agnostic-stack.md
 | `cnpg-operator` | -1 | platform | CloudNativePG operator |
 | `rabbitmq-operator` | -1 | platform | RabbitMQ Cluster Operator |
 | `dragonfly-operator` | -1 | platform | Dragonfly operator |
-| `linkerd` | -1 | platform | Service mesh control plane |
 | `network-policies` | 0 | platform | Default-deny + namespace policies |
 | `kube-prometheus-stack` | 1 | observability | Scrape engine → VM remote_write |
 | `victoria-metrics` | 0 | observability | Metrics backend (vmcluster + vmalert) |

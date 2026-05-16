@@ -14,10 +14,11 @@ spec:
     targetRevision: 0.32.0
     helm:
       values: |
-        # On develop we run Vault with TLS disabled inside the cluster and
-        # rely on Linkerd mTLS for service-to-service confidentiality. The
-        # UI is fronted by Traefik with a Let's Encrypt cert, so external
-        # traffic is still TLS. On production we re-enable in-pod TLS with
+        # On develop we run Vault with TLS disabled inside the cluster.
+        # In-cluster traffic is encrypted by Cilium transparent encryption
+        # (WireGuard-based, node-to-node). The UI is fronted by Traefik
+        # with a Let's Encrypt cert, so external traffic is still TLS.
+        # On production we re-enable in-pod TLS with
         # certs issued by cert-manager (see platform/vault/ once the prod
         # cluster comes online).
         global:
@@ -49,9 +50,9 @@ spec:
                   }
                 }
                 service_registration "kubernetes" {}
-                # Auto-unseal on develop is via Shamir keys held by ops in
-                # 1Password. Production wires this up to an HSM or another
-                # KMS once available.
+                # Unseal on develop is manual Shamir unseal; the key
+                # shares are held by ops in 1Password. Production wires
+                # this up to an HSM or another KMS once available.
           dataStorage:
             enabled: true
             size: 10Gi

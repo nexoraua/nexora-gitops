@@ -1,5 +1,5 @@
 # Authentik central IdP — OIDC for admin app, ArgoCD, Grafana, vmui,
-# Linkerd Viz, RabbitMQ Management. Upstream OIDC source: Google Workspace.
+# RabbitMQ Management. Upstream OIDC source: Google Workspace.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
