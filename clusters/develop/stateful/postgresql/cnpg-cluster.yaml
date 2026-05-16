@@ -50,7 +50,39 @@ spec:
       - pgaudit
   monitoring:
     enablePodMonitor: true
-  # Backups disabled for develop until a Hetzner Object Storage bucket
-  # + S3 credentials are provisioned. Staging/production re-enable
-  # `backup.barmanObjectStore` + a ScheduledBackup pointing at
-  # nexora-cnpg-backups-<env>.
+  # Continuous backup: WAL archiving + scheduled base backups to AWS S3
+  # (eu-central-1) — a different provider than the Hetzner cluster, so a
+  # Hetzner-wide outage does not take the backups with it. WAL archiving
+  # gives PITR; the ScheduledBackup below takes a daily base backup.
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-develop/"
+      endpointURL: "https://s3.eu-central-1.amazonaws.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+---
+# Daily base backup at 03:00; combined with continuous WAL archiving
+# this gives point-in-time recovery within the 30-day retention window.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-business-develop-daily
+  namespace: postgresql
+spec:
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-business-develop
+  method: barmanObjectStore
