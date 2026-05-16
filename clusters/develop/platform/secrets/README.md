@@ -61,19 +61,22 @@ Materialize: `cnpg-superuser` (postgresql ns) та
 
 ### 5. CNPG S3 backup credentials (Hetzner Object Storage)
 
-Bucket `nexora-develop-cnpg-backups`, endpoint
-`fsn1.your-objectstorage.com`, S3 v4. Створити access key у Hetzner
-Cloud Console (Object Storage → Credentials), мінімально-обмежені на
-цей bucket.
+Bucket `nexora-cnpg-backups-develop`, endpoint
+`fsn1.your-objectstorage.com`, S3 v4. Access key створюється у Hetzner
+Console (Object Storage → Credentials) — Hetzner Object Storage keys
+project-scoped (не per-bucket / per-action, на відміну від AWS IAM).
 
 ```bash
-vault kv put kv/nexora/develop/object-storage/cnpg-backups \
-  access_key_id=$HCLOUD_S3_AK \
-  secret_access_key=$HCLOUD_S3_SK
+vault kv put kv/nexora/develop/cnpg/backup-s3 \
+  access-key-id=$HCLOUD_S3_AK \
+  secret-access-key=$HCLOUD_S3_SK
 ```
 
-Materialize: `cnpg-business-s3-backup` (postgresql ns) та
-`cnpg-authentik-s3-backup` (authentik ns).
+Materialize: `cnpg-backup-s3` (postgresql ns) — використовується
+`barmanObjectStore` бізнес-кластера.
+
+> Backup `nexora-authentik-develop` (authentik ns) — окремий follow-up,
+> ще не налаштований.
 
 ### 6. Loki S3 credentials
 
@@ -172,7 +175,7 @@ image (на старті Nexora образи публічні / Hetzner registry
 - [ ] `kv/nexora/develop/cnpg/superuser` записаний.
 - [ ] `kv/nexora/develop/cnpg/authentik-superuser` записаний.
 - [ ] `kv/nexora/develop/authentik/postgres` записаний.
-- [ ] `kv/nexora/develop/object-storage/cnpg-backups` записаний.
+- [ ] `kv/nexora/develop/cnpg/backup-s3` записаний.
 - [ ] `kv/nexora/develop/object-storage/loki` записаний.
 - [ ] `kv/nexora/develop/object-storage/tempo` записаний.
 - [ ] `kv/nexora/develop/rabbitmq/admin` записаний.
