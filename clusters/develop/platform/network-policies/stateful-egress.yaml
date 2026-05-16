@@ -250,3 +250,39 @@ spec:
           protocol: TCP
         - port: 15672
           protocol: TCP
+---
+# CNPG instance pods need egress to Hetzner Object Storage (FSN1) for
+# WAL archiving + base backups. Scoped to the object-storage FQDN via
+# Cilium toFQDNs so only that endpoint is reachable — not the wider
+# internet. The DNS rule carries `rules.dns` so Cilium's DNS proxy can
+# learn the FQDN -> IP mapping that toFQDNs depends on.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cnpg-egress-object-storage
+  namespace: postgresql
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: "fsn1.your-objectstorage.com"
+        - matchPattern: "*.fsn1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
