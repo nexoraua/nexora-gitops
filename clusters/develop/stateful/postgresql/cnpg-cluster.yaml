@@ -51,15 +51,17 @@ spec:
   monitoring:
     enablePodMonitor: true
   # Continuous backup: WAL archiving + scheduled base backups to Hetzner
-  # Object Storage (FSN1). WAL archiving gives PITR; the ScheduledBackup
-  # below takes a daily base backup. Retention 30d.
-  # NOTE for staging/production: place the backup bucket in a different
-  # location than the cluster (e.g. cluster FSN1 -> bucket NBG1/HEL1) so
-  # a single-datacenter incident does not take the backups with it.
+  # Object Storage (FSN1), bucket nexora-develop-cnpg-backups with S3
+  # Object Lock enabled (GOVERNANCE, 1d default) + versioning, so a
+  # leaked write key cannot instantly erase recovery points. WAL
+  # archiving gives PITR; the ScheduledBackup below takes a daily base.
+  # NOTE for staging/production: bucket in a different location than the
+  # cluster (cluster FSN1 -> bucket HEL1) + a cross-provider AWS S3
+  # SSE-KMS DR copy — see architecture.md backup section.
   backup:
     retentionPolicy: "30d"
     barmanObjectStore:
-      destinationPath: "s3://nexora-cnpg-backups-develop/"
+      destinationPath: "s3://nexora-develop-cnpg-backups/"
       endpointURL: "https://fsn1.your-objectstorage.com"
       s3Credentials:
         accessKeyId:
