@@ -149,8 +149,6 @@ spec:
           protocol: TCP
         - port: 8000
           protocol: TCP
-        - port: 8000
-          protocol: TCP
     # CNPG operator + monitoring need to scrape /metrics on 9187.
     - from:
         - namespaceSelector:
