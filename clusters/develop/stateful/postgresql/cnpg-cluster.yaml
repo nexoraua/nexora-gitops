@@ -51,17 +51,22 @@ spec:
   monitoring:
     enablePodMonitor: true
   # Continuous backup: WAL archiving + scheduled base backups to Hetzner
-  # Object Storage (FSN1), bucket nexora-develop-cnpg-backups with S3
-  # Object Lock enabled (GOVERNANCE, 1d default) + versioning, so a
-  # leaked write key cannot instantly erase recovery points. WAL
+  # Object Storage (FSN1), bucket nexora-cnpg-backups-develop. WAL
   # archiving gives PITR; the ScheduledBackup below takes a daily base.
-  # NOTE for staging/production: bucket in a different location than the
-  # cluster (cluster FSN1 -> bucket HEL1) + a cross-provider AWS S3
-  # SSE-KMS DR copy — see architecture.md backup section.
+  #
+  # IMMUTABILITY (verified limitation): CloudNativePG/barman-cloud
+  # cannot write to a Hetzner Object Storage bucket that has S3 Object
+  # Lock enabled — PutObject is rejected with AccessDenied, and Object
+  # Lock cannot be disabled after bucket creation. So backup
+  # immutability cannot live on the barman target itself.
+  # PRODUCTION design: barman writes this mutable Hetzner primary; a
+  # separate sync job replicates to a cross-provider AWS S3 bucket with
+  # SSE-KMS + Object Lock (the immutable DR copy). See architecture.md
+  # backup section.
   backup:
     retentionPolicy: "30d"
     barmanObjectStore:
-      destinationPath: "s3://nexora-develop-cnpg-backups/"
+      destinationPath: "s3://nexora-cnpg-backups-develop/"
       endpointURL: "https://fsn1.your-objectstorage.com"
       s3Credentials:
         accessKeyId:
