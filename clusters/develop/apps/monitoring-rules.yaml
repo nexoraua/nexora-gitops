@@ -1,0 +1,25 @@
+# Alerting rules (VMRule) maintained in-repo, separate from the
+# Helm-managed VictoriaMetrics stack. vmalert picks every VMRule up
+# cluster-wide (selectAllByDefault=true).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-rules
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
