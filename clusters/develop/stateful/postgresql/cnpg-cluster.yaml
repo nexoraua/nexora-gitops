@@ -50,15 +50,17 @@ spec:
       - pgaudit
   monitoring:
     enablePodMonitor: true
-  # Continuous backup: WAL archiving + scheduled base backups to AWS S3
-  # (eu-central-1) — a different provider than the Hetzner cluster, so a
-  # Hetzner-wide outage does not take the backups with it. WAL archiving
-  # gives PITR; the ScheduledBackup below takes a daily base backup.
+  # Continuous backup: WAL archiving + scheduled base backups to Hetzner
+  # Object Storage (FSN1). WAL archiving gives PITR; the ScheduledBackup
+  # below takes a daily base backup. Retention 30d.
+  # NOTE for staging/production: place the backup bucket in a different
+  # location than the cluster (e.g. cluster FSN1 -> bucket NBG1/HEL1) so
+  # a single-datacenter incident does not take the backups with it.
   backup:
     retentionPolicy: "30d"
     barmanObjectStore:
       destinationPath: "s3://nexora-cnpg-backups-develop/"
-      endpointURL: "https://s3.eu-central-1.amazonaws.com"
+      endpointURL: "https://fsn1.your-objectstorage.com"
       s3Credentials:
         accessKeyId:
           name: cnpg-backup-s3
