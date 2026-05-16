@@ -54,15 +54,19 @@ spec:
   # Object Storage (FSN1), bucket nexora-cnpg-backups-develop. WAL
   # archiving gives PITR; the ScheduledBackup below takes a daily base.
   #
-  # IMMUTABILITY (verified limitation): CloudNativePG/barman-cloud
-  # cannot write to a Hetzner Object Storage bucket that has S3 Object
-  # Lock enabled — PutObject is rejected with AccessDenied, and Object
-  # Lock cannot be disabled after bucket creation. So backup
-  # immutability cannot live on the barman target itself.
+  # IMMUTABILITY (verified findings):
+  #  - barman-cloud CAN write to a Hetzner Object Storage bucket with S3
+  #    Object Lock enabled. The earlier AccessDenied was caused by the
+  #    bucket's S3 Public Access Block, which Hetzner OS enforces against
+  #    the bucket owner too — not by Object Lock. PAB must stay OFF on
+  #    this bucket.
+  #  - Hetzner OS Object Lock in GOVERNANCE mode is weak: a delete_object
+  #    without BypassGovernanceRetention still succeeds despite an active
+  #    retention. So Hetzner Object Lock does not give trustworthy WORM.
   # PRODUCTION design: barman writes this mutable Hetzner primary; a
-  # separate sync job replicates to a cross-provider AWS S3 bucket with
-  # SSE-KMS + Object Lock (the immutable DR copy). See architecture.md
-  # backup section.
+  # separate monitored sync job replicates to a cross-provider AWS S3
+  # bucket with SSE-KMS + COMPLIANCE-mode Object Lock (the immutable DR
+  # copy). See architecture.md backup section.
   backup:
     retentionPolicy: "30d"
     barmanObjectStore:
