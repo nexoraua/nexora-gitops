@@ -68,13 +68,17 @@ spec:
         secretAccessKey:
           name: cnpg-backup-s3
           key: SECRET_ACCESS_KEY
+      # NOTE: Hetzner Object Storage rejects the SSE header (AES256) with
+      # InvalidArgument, so barmanObjectStore-level `encryption:` cannot
+      # be set here. Backup data therefore relies on Hetzner Object
+      # Storage's own at-rest encryption. PRODUCTION requirement: use a
+      # backup target that supports SSE (or client-side encryption) — a
+      # fintech DB backup must be encrypted at rest with an owned key.
       wal:
         compression: gzip
-        encryption: AES256
         maxParallel: 2
       data:
         compression: gzip
-        encryption: AES256
         jobs: 2
 ---
 # Daily base backup at 03:00; combined with continuous WAL archiving
