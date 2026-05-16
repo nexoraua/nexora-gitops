@@ -249,11 +249,17 @@ spec:
         - port: 15672
           protocol: TCP
 ---
-# CNPG instance pods need egress to Hetzner Object Storage (FSN1) for
-# WAL archiving + base backups. Scoped to the object-storage FQDN via
-# Cilium toFQDNs so only that endpoint is reachable — not the wider
-# internet. The DNS rule carries `rules.dns` so Cilium's DNS proxy can
-# learn the FQDN -> IP mapping that toFQDNs depends on.
+# CNPG pods need egress to Hetzner Object Storage (FSN1). This must
+# cover not just running instances (WAL archiving + base backups) but
+# also the bootstrap/recovery and backup Job pods — a restore reads
+# the base backup + WAL from the bucket, and those Job pods carry
+# cnpg.io/jobRole, NOT cnpg.io/podRole=instance. Selecting on the
+# cnpg.io/cluster label (present on every CNPG-managed pod) covers
+# all of them; without it a restore fails with "Could not connect to
+# the endpoint URL". Scoped to the object-storage FQDN via Cilium
+# toFQDNs so only that endpoint is reachable — not the wider internet.
+# The DNS rule carries `rules.dns` so Cilium's DNS proxy can learn the
+# FQDN -> IP mapping that toFQDNs depends on.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -261,8 +267,9 @@ metadata:
   namespace: postgresql
 spec:
   endpointSelector:
-    matchLabels:
-      cnpg.io/podRole: instance
+    matchExpressions:
+      - key: cnpg.io/cluster
+        operator: Exists
   egress:
     - toEndpoints:
         - matchLabels:
