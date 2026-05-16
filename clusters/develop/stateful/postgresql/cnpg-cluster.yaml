@@ -13,6 +13,14 @@ spec:
   enableSuperuserAccess: true
   superuserSecret:
     name: cnpg-superuser
+  # Grafana Alloy scrapes by prometheus.io/scrape annotation (vmagent is
+  # disabled cluster-wide), so the instance pods must carry it. CNPG
+  # propagates inheritedMetadata to every managed resource, pods
+  # included. Port 9187 is the CNPG metrics exporter.
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
   storage:
     storageClass: linstor-r1
     size: 20Gi
@@ -49,7 +57,9 @@ spec:
       - pg_stat_statements
       - pgaudit
   monitoring:
-    enablePodMonitor: true
+    # PodMonitor disabled: nothing consumes it (vmagent is off, Alloy
+    # scrapes via the prometheus.io/scrape annotation set above).
+    enablePodMonitor: false
   # Continuous backup: WAL archiving + scheduled base backups to Hetzner
   # Object Storage (FSN1), bucket nexora-cnpg-backups-develop. WAL
   # archiving gives PITR; the ScheduledBackup below takes a daily base.
