@@ -34,6 +34,18 @@ spec:
       values: |
         nameOverride: vm
         fullnameOverride: vm
+        # The operator's admission-webhook cert: managed by cert-manager,
+        # not Helm. The chart's default (keepTLSSecret) reuses the live
+        # Secret via `lookup`, but `lookup` returns nil under ArgoCD's
+        # `helm template` render — so Helm regenerates a fresh CA on
+        # every sync and the webhook caBundle drifts away from the
+        # serving cert. With failurePolicy=Fail that then blocks every
+        # VM* CR write. cert-manager issues the cert and cainjector
+        # keeps the caBundle in sync, deterministically.
+        victoria-metrics-operator:
+          admissionWebhooks:
+            certManager:
+              enabled: true
         grafana:
           enabled: false      # standalone app — apps/grafana.yaml
         defaultRules:
