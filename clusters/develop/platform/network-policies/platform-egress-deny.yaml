@@ -64,3 +64,60 @@ spec:
               protocol: TCP
             - port: "6443"
               protocol: TCP
+---
+# cert-manager egress. The issuers use the ACME DNS-01 flow via
+# Cloudflare, so cert-manager reaches: Let's Encrypt ACME, the
+# Cloudflare API, and — for the DNS-01 self-check — the zone's
+# authoritative nameservers (*.ns.cloudflare.com on port 53). The
+# kube-dns rule carries `rules.dns` so Cilium's DNS proxy learns the
+# FQDN→IP mappings that toFQDNs depends on.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: cert-manager
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: cert-manager
+    # Let's Encrypt ACME + Cloudflare API (DNS-01 solver).
+    - toFQDNs:
+        - matchName: "acme-v02.api.letsencrypt.org"
+        - matchName: "acme-staging-v02.api.letsencrypt.org"
+        - matchName: "api.cloudflare.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # DNS-01 self-check queries the zone's authoritative nameservers.
+    - toFQDNs:
+        - matchPattern: "*.ns.cloudflare.com"
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
