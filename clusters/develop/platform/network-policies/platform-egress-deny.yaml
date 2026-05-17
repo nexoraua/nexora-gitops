@@ -121,3 +121,61 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+---
+# authentik egress. Authentik has no external upstream configured on
+# develop (only the built-in source, no SMTP) — its own egress is
+# entirely in-cluster: Redis (dragonfly) and its Postgres (the CNPG
+# cluster co-located in this namespace, reached intra-namespace).
+# The namespace also hosts that CNPG cluster, whose instance and
+# backup/recovery Job pods need egress to Hetzner Object Storage for
+# WAL archiving + base backups — hence the toFQDNs rule.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: authentik
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    # Intra-namespace — authentik server/worker and the co-located
+    # CNPG Postgres cluster.
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: authentik
+    # Redis cache (Dragonfly).
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: dragonfly
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    # CNPG WAL archiving + base backups for the authentik cluster.
+    - toFQDNs:
+        - matchName: "fsn1.your-objectstorage.com"
+        - matchPattern: "*.fsn1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
