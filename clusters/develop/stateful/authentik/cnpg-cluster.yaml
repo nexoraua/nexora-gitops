@@ -12,6 +12,14 @@ spec:
   enableSuperuserAccess: true
   superuserSecret:
     name: cnpg-authentik-superuser
+  # Grafana Alloy scrapes by prometheus.io/scrape annotation; CNPG
+  # propagates inheritedMetadata to the instance pods. Port 9187 is
+  # the CNPG metrics exporter. This is what makes the cnpg-backup-alerts
+  # VMRule cover this cluster too.
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
   bootstrap:
     initdb:
       database: authentik
@@ -36,7 +44,46 @@ spec:
         value: database
         effect: NoSchedule
   monitoring:
-    enablePodMonitor: true
-  # Backups disabled for develop until a Hetzner Object Storage bucket
-  # + S3 credentials are provisioned. Staging/production re-enable
-  # `backup.barmanObjectStore` against nexora-cnpg-backups-<env>.
+    # PodMonitor disabled: nothing consumes it (vmagent is off, Alloy
+    # scrapes via the prometheus.io/scrape annotation set above).
+    enablePodMonitor: false
+  # Continuous backup of the Authentik identity database: WAL archiving
+  # + daily base backup to Hetzner Object Storage bucket
+  # nexora-cnpg-backups-authentik-develop (FSN1) — kept in a separate
+  # bucket from the business cluster for blast-radius isolation.
+  # See ADR-I-0005 for the production immutability design. Hetzner
+  # Object Storage rejects the SSE header, so barmanObjectStore-level
+  # encryption is not set (provider at-rest encryption only on develop).
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-authentik-develop/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+---
+# Daily base backup at 04:00 (staggered from the business cluster's
+# 03:00); with continuous WAL archiving this gives PITR within the
+# 30-day retention window.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-authentik-develop-daily
+  namespace: authentik
+spec:
+  schedule: "0 0 4 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-authentik-develop
+  method: barmanObjectStore
