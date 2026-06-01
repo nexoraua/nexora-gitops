@@ -1,0 +1,29 @@
+# PodDisruptionBudgets for CloudNativePG clusters.
+# Selector keys come from CNPG operator labels (cnpg.io/cluster).
+#
+# Both CNPG clusters on staging run a single instance, so these PDBs
+# are advisory only (minAvailable: 0). The manifests stay in git as
+# documentation of the production posture (instances >= 2,
+# minAvailable: 1).
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-business-pdb
+  namespace: postgresql
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-business-staging
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-authentik-pdb
+  namespace: authentik
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-authentik-staging

@@ -1,0 +1,152 @@
+# One-time bootstrap Job that configures Vault OIDC auth method against
+# Authentik. Idempotent — re-running is safe (Vault writes are upserts).
+# Triggered manually or by ArgoCD; remove the Job after Authentik OIDC
+# is verified working.
+#
+# Prerequisites:
+#   1. Vault is initialized and unsealed (Shamir keys held by ops).
+#   2. The Authentik OIDC provider for Vault has been created via
+#      platform/authentik/blueprints/vault.yaml and its client_id /
+#      client_secret are stored in Vault KV at
+#      kv/nexora/staging/vault-oidc.
+#   3. A short-lived root token is mounted as VAULT_TOKEN; rotate it
+#      with `vault token revoke` right after this Job succeeds.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-oidc-bootstrap
+  namespace: vault-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: vault-bootstrap
+      containers:
+        - name: vault-cli
+          image: hashicorp/vault:1.18
+          env:
+            - name: VAULT_ADDR
+              value: http://vault.vault-system.svc:8200
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-bootstrap-token
+                  key: token
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: vault-oidc-client
+                  key: client_id
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: vault-oidc-client
+                  key: client_secret
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              echo "==> Enable OIDC auth method"
+              vault auth enable -path=oidc oidc || true
+
+              echo "==> Configure OIDC against Authentik"
+              vault write auth/oidc/config \
+                oidc_discovery_url="https://auth.staging.nxua.dev/application/o/vault/" \
+                oidc_client_id="${OIDC_CLIENT_ID}" \
+                oidc_client_secret="${OIDC_CLIENT_SECRET}" \
+                default_role="infra-readonly"
+
+              echo "==> Define infra-admin policy"
+              vault policy write infra-admin - <<'POLICY'
+              path "kv/*"            { capabilities = ["create","read","update","delete","list"] }
+              path "transit/*"       { capabilities = ["create","read","update","delete","list"] }
+              path "sys/policies/*"  { capabilities = ["read","list"] }
+              path "sys/auth/*"      { capabilities = ["read","list"] }
+              POLICY
+
+              echo "==> Define infra-readonly policy"
+              vault policy write infra-readonly - <<'POLICY'
+              path "kv/*"      { capabilities = ["read","list"] }
+              path "sys/auth/*"{ capabilities = ["read","list"] }
+              POLICY
+
+              echo "==> Define nexora-admin policy (admin app permission read)"
+              vault policy write nexora-admin - <<'POLICY'
+              path "kv/data/nexora/admin/*"                  { capabilities = ["read","list"] }
+              path "transit/encrypt/nexora-pii-staging"      { capabilities = ["update"] }
+              path "transit/decrypt/nexora-pii-staging"      { capabilities = ["update"] }
+              POLICY
+
+              echo "==> Define nexora-api policy (backend permission read)"
+              vault policy write nexora-api - <<'POLICY'
+              path "kv/data/nexora/backend/*"                { capabilities = ["read","list"] }
+              path "transit/encrypt/nexora-pii-staging"      { capabilities = ["update"] }
+              path "transit/decrypt/nexora-pii-staging"      { capabilities = ["update"] }
+              path "transit/datakey/plaintext/nexora-pii-staging" { capabilities = ["update"] }
+              POLICY
+
+              echo "==> Map Authentik group infra-ops -> infra-admin policy"
+              vault write auth/oidc/role/infra-ops \
+                bound_audiences="vault" \
+                allowed_redirect_uris="https://vault.staging.nxua.dev/ui/vault/auth/oidc/oidc/callback,https://vault.staging.nxua.dev/oidc/callback" \
+                user_claim="email" \
+                groups_claim="groups" \
+                bound_claims='{"groups":["infra-ops"]}' \
+                token_policies="infra-admin" \
+                token_ttl=1h \
+                token_max_ttl=8h
+
+              echo "==> Map Authentik group infra-readonly -> infra-readonly policy"
+              vault write auth/oidc/role/infra-readonly \
+                bound_audiences="vault" \
+                allowed_redirect_uris="https://vault.staging.nxua.dev/ui/vault/auth/oidc/oidc/callback,https://vault.staging.nxua.dev/oidc/callback" \
+                user_claim="email" \
+                groups_claim="groups" \
+                bound_claims='{"groups":["infra-readonly"]}' \
+                token_policies="infra-readonly" \
+                token_ttl=1h \
+                token_max_ttl=4h
+
+              echo "==> Enable Kubernetes auth for ESO and workload pods"
+              vault auth enable -path=kubernetes kubernetes || true
+              vault write auth/kubernetes/config \
+                kubernetes_host="https://kubernetes.default.svc" \
+                kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+              vault write auth/kubernetes/role/external-secrets \
+                bound_service_account_names="external-secrets" \
+                bound_service_account_namespaces="external-secrets" \
+                token_policies="infra-readonly" \
+                ttl=1h
+
+              vault write auth/kubernetes/role/nexora-api \
+                bound_service_account_names="nexora-api" \
+                bound_service_account_namespaces="nexora-api" \
+                token_policies="nexora-api" \
+                ttl=1h
+
+              vault write auth/kubernetes/role/nexora-admin \
+                bound_service_account_names="nexora-admin" \
+                bound_service_account_namespaces="nexora-admin" \
+                token_policies="nexora-admin" \
+                ttl=1h
+
+              echo "==> Enable transit engine for envelope encryption"
+              vault secrets enable -path=transit transit || true
+              vault write -f transit/keys/nexora-pii-staging type=aes256-gcm96
+              vault write -f transit/keys/nexora-backups-staging type=aes256-gcm96
+
+              echo "==> Done"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-bootstrap
+  namespace: vault-system

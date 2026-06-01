@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: grafana
+    targetRevision: 8.5.4
+    helm:
+      values: |
+        replicas: 1
+        persistence:
+          enabled: true
+          storageClassName: linstor-r1
+          size: 2Gi
+        admin:
+          existingSecret: grafana-admin
+          userKey: admin-user
+          passwordKey: admin-password
+        ingress:
+          enabled: true
+          ingressClassName: traefik
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+          hosts:
+            - grafana.staging.nxua.dev
+          tls:
+            - secretName: grafana-tls
+              hosts:
+                - grafana.staging.nxua.dev
+        # OIDC SSO via Authentik. client_id / client_secret come from
+        # the grafana-oidc Secret (ESO <- Vault kv/nexora/staging/oidc/
+        # grafana), mounted as files at /etc/grafana/secrets and read
+        # through grafana.ini's $__file{} expander.
+        extraSecretMounts:
+          - name: oidc-credentials
+            secretName: grafana-oidc
+            mountPath: /etc/grafana/secrets
+            readOnly: true
+        grafana.ini:
+          server:
+            root_url: https://grafana.staging.nxua.dev
+          auth.generic_oauth:
+            enabled: true
+            name: Authentik
+            allow_sign_up: true
+            client_id: $__file{/etc/grafana/secrets/oidc-client-id}
+            client_secret: $__file{/etc/grafana/secrets/oidc-client-secret}
+            scopes: openid profile email
+            auth_url: https://auth.staging.nxua.dev/application/o/authorize/
+            token_url: https://auth.staging.nxua.dev/application/o/token/
+            api_url: https://auth.staging.nxua.dev/application/o/userinfo/
+            # Authentik doesn't emit a groups claim by default — until a
+            # groups property mapping is added, every OIDC sign-in maps
+            # to the role hard-coded below. Staging defaults to Viewer
+            # so a leaked OIDC session can't take admin actions; promote
+            # individuals to Editor/Admin manually until the groups
+            # mapping ships.
+            role_attribute_path: "'Viewer'"
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              - name: VictoriaMetrics
+                type: prometheus
+                isDefault: true
+                url: http://vmselect-vm.monitoring.svc:8481/select/0/prometheus
+                access: proxy
+              - name: Loki
+                type: loki
+                url: http://loki-gateway.monitoring.svc
+                access: proxy
+              - name: Tempo
+                type: tempo
+                url: http://tempo.monitoring.svc:3100
+                access: proxy
+        sidecar:
+          dashboards:
+            enabled: true
+            label: grafana_dashboard
+            labelValue: "1"
+          datasources:
+            enabled: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

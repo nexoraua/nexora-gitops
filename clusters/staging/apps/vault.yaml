@@ -1,0 +1,87 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  annotations:
+    # Vault first — everything else uses External Secrets via Vault backend.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: apps
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.32.0
+    helm:
+      values: |
+        # On staging we run Vault with TLS disabled inside the cluster.
+        # In-cluster traffic is encrypted by Cilium transparent encryption
+        # (WireGuard-based, node-to-node). The UI is fronted by Traefik
+        # with a Let's Encrypt cert, so external traffic is still TLS.
+        #
+        # Staging is a sandbox — we keep ha.raft.enabled=true so the
+        # storage backend matches production, but run replicas: 1.
+        # Data loss is tolerated; full backup/restore drills happen on
+        # production. Production re-enables in-pod TLS with cert-manager
+        # certificates and scales to 3 raft replicas.
+        global:
+          tlsDisable: true
+        server:
+          ha:
+            enabled: true
+            replicas: 1
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+                listener "tcp" {
+                  tls_disable = 1
+                  address     = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                }
+                storage "raft" {
+                  path = "/vault/data"
+                }
+                service_registration "kubernetes" {}
+                # Unseal on staging is manual Shamir unseal; the key
+                # shares are held by ops in 1Password. Production wires
+                # this up to an HSM or another KMS once available.
+          dataStorage:
+            enabled: true
+            size: 5Gi
+            storageClass: hcloud-volumes
+          # Staging pins Vault to the system nodepool (single replica).
+          # The system pool is tainted nodepool=system:NoSchedule, so
+          # we must tolerate it. control-plane / database stay excluded.
+          tolerations: |
+            - key: nodepool
+              operator: Equal
+              value: system
+              effect: NoSchedule
+          nodeSelector:
+            nodepool: system
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+        ui:
+          enabled: true
+          serviceType: ClusterIP
+        injector:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault-system
+  syncPolicy:
+    automated:
+      prune: false  # never auto-prune Vault — manual approval only
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

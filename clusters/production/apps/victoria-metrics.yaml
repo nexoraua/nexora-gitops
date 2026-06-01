@@ -1,0 +1,224 @@
+# VictoriaMetrics — the single metrics backend for production.
+#
+# Production tuning vs develop:
+#   - vmcluster replicationFactor=2, vmstorage 3 replicas (-> ingest can
+#     lose 1 vmstorage without dropping samples)
+#   - vmselect / vminsert / vmalert 2 replicas each (anti-affinity)
+#   - vmalertmanager 2 replicas with HA (gossip), 5 Gi persistence
+#   - retention 13 months (regulatory minimum for the audit trail)
+#   - kube-state-metrics + node-exporter stay enabled with Alloy scraping
+#   - all metrics components pinned to the system pool with hostname
+#     anti-affinity
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-metrics
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+spec:
+  project: observability
+  source:
+    repoURL: https://victoriametrics.github.io/helm-charts
+    chart: victoria-metrics-k8s-stack
+    targetRevision: 0.30.0
+    helm:
+      releaseName: vm
+      values: |
+        nameOverride: vm
+        fullnameOverride: vm
+        victoria-metrics-operator:
+          admissionWebhooks:
+            certManager:
+              enabled: true
+        grafana:
+          enabled: false      # standalone app — apps/grafana.yaml
+        defaultRules:
+          create: true        # vmalert recording + alerting rules
+        # --- kube-state-metrics ---
+        kubeStateMetrics:
+          enabled: true
+        kube-state-metrics:
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "8080"
+          replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: kube-state-metrics
+                  topologyKey: kubernetes.io/hostname
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+        # --- node-exporter ---
+        nodeExporter:
+          enabled: true
+        prometheus-node-exporter:
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9100"
+          tolerations:
+            - operator: Exists
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+        kubeApiServer:
+          enabled: false
+        kubelet:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        coreDns:
+          enabled: false
+        kubeDns:
+          enabled: false
+        vmcluster:
+          enabled: true
+          spec:
+            retentionPeriod: "13"
+            # replicationFactor=2 — samples are written to 2 of 3
+            # vmstorage replicas; losing a single vmstorage does not
+            # drop fresh data, and vmselect's dedup reconciles reads.
+            replicationFactor: 2
+            vmstorage:
+              replicaCount: 3
+              podDisruptionBudget:
+                maxUnavailable: 1
+              affinity:
+                podAntiAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: vmstorage
+                      topologyKey: kubernetes.io/hostname
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: linstor-r1
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 100Gi
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 2Gi
+                limits:
+                  memory: 4Gi
+            vmselect:
+              replicaCount: 2
+              cacheMountPath: /select-cache
+              podDisruptionBudget:
+                maxUnavailable: 1
+              affinity:
+                podAntiAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: vmselect
+                      topologyKey: kubernetes.io/hostname
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: linstor-r1
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 20Gi
+              resources:
+                requests:
+                  cpu: 300m
+                  memory: 1Gi
+                limits:
+                  memory: 2Gi
+            vminsert:
+              replicaCount: 2
+              podDisruptionBudget:
+                maxUnavailable: 1
+              affinity:
+                podAntiAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: vminsert
+                      topologyKey: kubernetes.io/hostname
+              resources:
+                requests:
+                  cpu: 300m
+                  memory: 512Mi
+                limits:
+                  memory: 1Gi
+        vmagent:
+          enabled: false       # scraping is done by Grafana Alloy
+        vmalert:
+          enabled: true
+          spec:
+            replicaCount: 2
+            podDisruptionBudget:
+              maxUnavailable: 1
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: vmalert
+                    topologyKey: kubernetes.io/hostname
+            datasource:
+              url: "http://vmselect-vm.monitoring.svc:8481/select/0/prometheus/"
+            notifier:
+              url: "http://vmalertmanager-vm.monitoring.svc:9093/"
+        vmalertmanager:
+          enabled: true
+          spec:
+            replicaCount: 2
+            podDisruptionBudget:
+              maxUnavailable: 1
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: vmalertmanager
+                    topologyKey: kubernetes.io/hostname
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: linstor-r1
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 5Gi
+            # Routes are loaded from the alertmanager-config Secret
+            # materialised by ESO from kv/nexora/production/alerts/*.
+            configSecret: alertmanager-config
+        vmsingle:
+          enabled: false       # vmcluster mode
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

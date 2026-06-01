@@ -1,6 +1,6 @@
-# Allow Redis-protocol ingress to the Dragonfly cache from app namespaces
-# that consume it. Without this, authentik / nexora-api / etc. cannot
-# reach nexora-cache:6379 because the dragonfly ns has default-deny-all.
+# Redis-protocol ingress to Dragonfly from app namespaces that consume
+# it. Without this, authentik / nexora-api / nexora-admin cannot reach
+# nexora-cache:6379 because the dragonfly ns has default-deny-all.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -15,7 +15,6 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # App clients reach the Redis-protocol port.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -35,7 +34,7 @@ spec:
     # The Dragonfly Operator drives leader election + replication via
     # the admin port 9999. Without this allow, it can't run "SLAVE OF
     # NO ONE" on the pod, never labels the pod role=master, and the
-    # Service ends up with zero endpoints — so every client connection
+    # Service ends up with zero endpoints — every client connection
     # gets EPERM from Cilium's socket LB.
     - from:
         - namespaceSelector:
@@ -47,11 +46,11 @@ spec:
         - port: 9999
           protocol: TCP
 ---
-# Dragonfly itself needs DNS egress so the operator can resolve peers.
+# Dragonfly egress: peer replication + operator probes.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: dragonfly-cache-egress-dns
+  name: dragonfly-cache-egress-peer
   namespace: dragonfly
 spec:
   podSelector:
@@ -71,4 +70,13 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dragonfly
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 9999
           protocol: TCP

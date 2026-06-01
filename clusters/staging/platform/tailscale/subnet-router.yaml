@@ -1,0 +1,166 @@
+# Single-replica Tailscale subnet router for staging. The router
+# advertises 10.50.0.0/16 (Hetzner private network of the staging
+# cluster) into the nxua tailnet so engineers on Tailscale reach
+# kube API / pod / service IPs without their public IP being in
+# TF_VAR_FIREWALL_ALLOWED_IPS.
+#
+# Single replica is acceptable on staging (sandbox). The StatefulSet
+# topology — and per-pod state Secret — stays consistent with develop
+# / production so promotion of fixes between environments is mechanical.
+#
+# Scheduling: lands on the system or workers pool (the database pool is
+# tainted and reserved for stateful workloads). PDB minAvailable: 0 so
+# voluntary disruptions never block.
+#
+# Auth key requirements (https://login.tailscale.com/admin/settings/keys):
+#   - Reusable: yes
+#   - Ephemeral: no
+#   - Pre-authorized: yes
+#   - Tags: tag:k8s
+# Seed it into Vault:
+#   vault kv put kv/nexora/staging/tailscale auth-key="tskey-auth-..."
+# ESO materializes Secret tailscale-auth (see platform/secrets/).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+---
+# Headless Service — required by the StatefulSet (serviceName). The
+# subnet router is not a server, so this carries no real traffic; it
+# only gives the StatefulSet stable pod DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+spec:
+  clusterIP: None
+  selector:
+    app: tailscale-subnet-router
+  ports:
+    - name: placeholder
+      port: 9999
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+  labels:
+    app: tailscale-subnet-router
+spec:
+  replicas: 1
+  serviceName: tailscale-subnet-router
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: tailscale-subnet-router
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: tailscale-subnet-router
+    spec:
+      serviceAccountName: tailscale-subnet-router
+      affinity:
+        # Eligible nodes: system pool + the untainted workers node.
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nodepool
+                    operator: In
+                    values: [system, workers]
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+      hostNetwork: false
+      containers:
+        - name: tailscale
+          image: tailscale/tailscale:v1.96.5
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Per-pod state Secret — each replica is its own tailnet node.
+            - name: TS_KUBE_SECRET
+              value: "$(POD_NAME)-state"
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth
+                  key: auth-key
+            - name: TS_ROUTES
+              value: "10.50.0.0/16"
+            - name: TS_HOSTNAME
+              value: "$(POD_NAME)"
+            - name: TS_EXTRA_ARGS
+              # Advertise tags so Tailscale ACLs can target this device.
+              value: "--advertise-tags=tag:k8s,tag:nexora-staging --accept-dns=false"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+# Tailscale uses a Kubernetes Secret as state store (TS_KUBE_SECRET).
+# The single replica owns its own Secret — name is the pod name + "-state".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - tailscale-subnet-router-0-state
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tailscale-subnet-router
+subjects:
+  - kind: ServiceAccount
+    name: tailscale-subnet-router
+    namespace: tailscale
+---
+# Single replica on staging — advisory PDB (minAvailable: 0). The
+# StatefulSet keeps a stable pod identity through rolling updates;
+# accept brief route loss on node drain.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: tailscale-subnet-router

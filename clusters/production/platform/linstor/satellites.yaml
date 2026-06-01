@@ -1,0 +1,62 @@
+# Per-nodepool LinstorSatelliteConfiguration — defines storage pools
+# AND tolerations. Both fields are needed at the per-pool level
+# because Piraeus uses tolerations from the matching configurations
+# (not just the cluster-wide one) to decide whether the satellite
+# DaemonSet can schedule on each node.
+---
+# workers pool — CPX31, no taint, no toleration needed.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-workers
+spec:
+  nodeSelector:
+    nodepool: workers
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+# system pool — CCX13. Hosts Vault Raft leader + Traefik + ArgoCD +
+# cert-manager + ESO + monitoring control plane. Pool stores small
+# volumes (cert-manager state, grafana, vmalertmanager).
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-system
+spec:
+  nodeSelector:
+    nodepool: system
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+# stateful pool — CCX23 (3 nodes). This is the production data tier
+# that linstor-r3 (replicationFactor=3) spreads PVCs across. CNPG
+# business + authentik PostgreSQL clusters live here.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-stateful
+spec:
+  nodeSelector:
+    nodepool: database
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: database
+          effect: NoSchedule
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore

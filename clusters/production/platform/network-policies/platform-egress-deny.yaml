@@ -1,0 +1,263 @@
+# Egress lockdown for platform namespaces. Pairs with the default-deny
+# in default-deny.yaml. toFQDNs allowlists scope external egress to the
+# exact hostnames each controller needs.
+---
+# external-secrets: in-cluster only (Vault + kube-apiserver + DNS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: external-secrets
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: vault-system
+      ports:
+        - port: 8200
+          protocol: TCP
+    - to:
+        - podSelector: {}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-apiserver
+  namespace: external-secrets
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+---
+# cert-manager: ACME DNS-01 via Cloudflare. Reaches Let's Encrypt ACME,
+# Cloudflare API, and the zone's authoritative nameservers for the
+# DNS-01 self-check. Cilium DNS proxy (rules.dns) learns the FQDN->IP
+# mappings that toFQDNs depends on.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: cert-manager
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: cert-manager
+    - toFQDNs:
+        - matchName: "acme-v02.api.letsencrypt.org"
+        - matchName: "acme-staging-v02.api.letsencrypt.org"
+        - matchName: "api.cloudflare.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchPattern: "*.ns.cloudflare.com"
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+# authentik: Postgres (intra-ns), Dragonfly, Google Workspace OIDC,
+# and Hetzner Object Storage for the co-located CNPG backups.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: authentik
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: authentik
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: dragonfly
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    # Google Workspace OIDC upstream + Authentik SMTP (Mailgun if used).
+    - toFQDNs:
+        - matchName: "accounts.google.com"
+        - matchName: "oauth2.googleapis.com"
+        - matchName: "openidconnect.googleapis.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # CNPG WAL archiving + base backups for the authentik cluster.
+    - toFQDNs:
+        - matchName: "fsn1.your-objectstorage.com"
+        - matchPattern: "*.fsn1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# monitoring: Hetzner Object Storage for Loki chunks + Tempo blocks,
+# plus alert delivery (Slack + PagerDuty) from vmalertmanager.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: monitoring
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints: []   # intra-cluster scraping cluster-wide
+    - toFQDNs:
+        - matchName: "fsn1.your-objectstorage.com"
+        - matchPattern: "*.fsn1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Alertmanager outbound: Slack webhooks + PagerDuty Events API.
+    - toFQDNs:
+        - matchName: "hooks.slack.com"
+        - matchName: "events.pagerduty.com"
+        - matchName: "events.eu.pagerduty.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# vault-system: kube-apiserver (Kubernetes auth), DNS, AWS KMS for
+# transit auto-unseal, and Traefik websecure for the OIDC discovery
+# self-call (vault.nxua.dev split-horizon resolves to Traefik ClusterIP).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: vault-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: traefik
+      toPorts:
+        - ports:
+            - port: "8443"
+              protocol: TCP
+    # AWS KMS for transit auto-unseal (eu-central-1 regional endpoint).
+    - toFQDNs:
+        - matchName: "kms.eu-central-1.amazonaws.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

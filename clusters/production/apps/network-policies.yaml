@@ -1,0 +1,25 @@
+# NetworkPolicy + CiliumNetworkPolicy bundle — full default-deny ingress
+# AND egress lockdown for every stateful + platform namespace, plus the
+# explicit allowlists that keep the cluster actually functional.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: network-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/network-policies
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

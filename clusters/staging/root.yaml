@@ -1,0 +1,26 @@
+# Root Application for staging cluster — app-of-apps pattern.
+# Apply once with: kubectl apply -n argocd -f clusters/staging/root.yaml
+# All other Applications are managed by this one through clusters/staging/apps/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: staging-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/staging/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

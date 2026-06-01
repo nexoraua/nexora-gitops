@@ -1,0 +1,12 @@
+# Traefik edge — 2 replicas, maxUnavailable: 1 keeps the public LB
+# serving through node drains.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: traefik-pdb
+  namespace: traefik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik

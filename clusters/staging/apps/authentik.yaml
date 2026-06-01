@@ -1,0 +1,80 @@
+# Authentik central IdP — OIDC for admin app, ArgoCD, Grafana, vmui,
+# RabbitMQ Management. Upstream OIDC source: Google Workspace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: apps
+  source:
+    repoURL: https://charts.goauthentik.io
+    chart: authentik
+    targetRevision: 2024.10.5
+    helm:
+      values: |
+        global:
+          envFrom:
+            - secretRef:
+                name: authentik-bootstrap
+        authentik:
+          error_reporting:
+            enabled: false
+          postgresql:
+            host: nexora-authentik-staging-rw.authentik.svc
+            name: authentik
+            user: authentik
+            # Password is injected via envFrom from the
+            # authentik-bootstrap Secret (key
+            # AUTHENTIK_POSTGRESQL__PASSWORD). Setting this field here
+            # would make Helm template the literal `${VAR}` into the
+            # chart's authentik Secret, which Authentik then takes as
+            # the password verbatim.
+          redis:
+            host: nexora-cache.dragonfly.svc.cluster.local
+        server:
+          replicas: 1
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - auth.staging.nxua.dev
+            tls:
+              - secretName: authentik-tls
+                hosts:
+                  - auth.staging.nxua.dev
+          resources:
+            requests:
+              cpu: 150m
+              memory: 384Mi
+            limits:
+              memory: 768Mi
+        worker:
+          replicas: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        postgresql:
+          enabled: false   # provided by CloudNativePG (clusters/staging/stateful/authentik/)
+        redis:
+          enabled: false   # provided by Dragonfly (apps/dragonfly-cache.yaml)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

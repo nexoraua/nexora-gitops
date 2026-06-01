@@ -1,0 +1,43 @@
+# Standalone Tailscale subnet router for staging cluster.
+# Runs as a privileged Deployment with a pre-shared auth key — no
+# Tailscale Operator / OAuth client needed. Advertises the Hetzner
+# private network (10.50.0.0/16) into the nxua tailnet so engineers
+# on Tailscale reach kube API, pod IPs, and service IPs without
+# their public IP being in TF_VAR_FIREWALL_ALLOWED_IPS.
+#
+# Auth key requirements (generated at
+# https://login.tailscale.com/admin/settings/keys):
+#   - Reusable: yes
+#   - Ephemeral: no
+#   - Pre-authorized: yes
+#   - Tags: tag:k8s (define tagOwners in ACL first)
+# Then seed it into Vault:
+#   vault kv put kv/nexora/staging/tailscale auth-key="tskey-auth-..."
+# ESO materializes a Secret named tailscale-auth in the tailscale ns
+# (see platform/secrets/tailscale-oauth.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-subnet-router
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/staging/platform/tailscale
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

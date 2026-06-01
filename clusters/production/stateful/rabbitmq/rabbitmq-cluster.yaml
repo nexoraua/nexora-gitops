@@ -1,0 +1,49 @@
+# RabbitMQ cluster — production.
+# 3-broker quorum-queue cluster on linstor-r1 (RabbitMQ replicates at the
+# app layer via quorum queues + cluster_partition_handling=pause_minority,
+# so we don't double-replicate at the storage layer).
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: nexora-rabbitmq
+  namespace: rabbitmq
+spec:
+  replicas: 3
+  image: rabbitmq:4.0-management
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  persistence:
+    storageClassName: linstor-r1
+    storage: 20Gi
+  rabbitmq:
+    additionalConfig: |
+      cluster_partition_handling = pause_minority
+      collect_statistics_interval = 10000
+      default_queue_type = quorum
+      cluster_formation.peer_discovery_backend = k8s
+  override:
+    statefulSet:
+      spec:
+        template:
+          metadata:
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "15692"
+          spec:
+            affinity:
+              # One broker per node — losing a single node only kills 1
+              # of 3 brokers, quorum queues stay available (need 2 of 3).
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: nexora-rabbitmq
+                    topologyKey: kubernetes.io/hostname
+            containers: []
+  secretBackend:
+    externalSecret:
+      name: rabbitmq-credentials

@@ -1,0 +1,160 @@
+# VictoriaMetrics — the single metrics backend for Nexora.
+#
+# victoria-metrics-k8s-stack bundles, on staging:
+#   - vmcluster  (vmstorage / vminsert / vmselect)  — 1-month retention
+#   - vmalert + alertmanager                        — alerting
+#   - kube-state-metrics                            — k8s object metrics
+#   - prometheus-node-exporter                      — node metrics
+#
+# vmagent is disabled — Grafana Alloy (apps/alloy.yaml) does ALL
+# scraping via prometheus.io/scrape annotations and remote-writes to
+# vminsert. kube-state-metrics + node-exporter get those annotations
+# here so Alloy picks them up.
+#
+# vmselect speaks the Prometheus query API, so Grafana and the Lens
+# IDE point straight at it — there is no separate Prometheus.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-metrics
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+spec:
+  project: observability
+  source:
+    repoURL: https://victoriametrics.github.io/helm-charts
+    chart: victoria-metrics-k8s-stack
+    targetRevision: 0.30.0
+    helm:
+      # Short release name "vm" keeps the chart's nested service names
+      # (vmselect-vm, vminsert-vm, ...) under the 63-char limit.
+      releaseName: vm
+      values: |
+        nameOverride: vm
+        fullnameOverride: vm
+        # The operator's admission-webhook cert: managed by cert-manager,
+        # not Helm. The chart's default (keepTLSSecret) reuses the live
+        # Secret via `lookup`, but `lookup` returns nil under ArgoCD's
+        # `helm template` render — so Helm regenerates a fresh CA on
+        # every sync and the webhook caBundle drifts away from the
+        # serving cert. With failurePolicy=Fail that then blocks every
+        # VM* CR write. cert-manager issues the cert and cainjector
+        # keeps the caBundle in sync, deterministically.
+        victoria-metrics-operator:
+          admissionWebhooks:
+            certManager:
+              enabled: true
+        grafana:
+          enabled: false      # standalone app — apps/grafana.yaml
+        defaultRules:
+          create: true        # vmalert recording + alerting rules
+        # --- kube-state-metrics: keep, annotate for Alloy ---
+        kubeStateMetrics:
+          enabled: true
+        kube-state-metrics:
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "8080"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+        # --- node-exporter: keep, annotate for Alloy, tolerate taints ---
+        nodeExporter:
+          enabled: true
+        prometheus-node-exporter:
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9100"
+          tolerations:
+            - operator: Exists
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+        # kube-control-plane scrape targets — Alloy/annotations cover
+        # what we need; the chart's ServiceMonitors would need vmagent.
+        kubeApiServer:
+          enabled: false
+        kubelet:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        coreDns:
+          enabled: false
+        kubeDns:
+          enabled: false
+        vmcluster:
+          enabled: true
+          spec:
+            # Staging keeps 1 month of metrics (vs 13 months on develop /
+            # production). Shorter window keeps the LINSTOR PVC small on
+            # a single stateful node.
+            retentionPeriod: "1"
+            replicationFactor: 1
+            vmstorage:
+              replicaCount: 1
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: linstor-r1
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 20Gi
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 384Mi
+                limits:
+                  memory: 768Mi
+            vmselect:
+              replicaCount: 1
+              cacheMountPath: /select-cache
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: linstor-r1
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 2Gi
+            vminsert:
+              replicaCount: 1
+        vmagent:
+          enabled: false       # scraping is done by Grafana Alloy
+        vmalert:
+          enabled: true
+          spec:
+            datasource:
+              url: "http://vmselect-vm.monitoring.svc:8481/select/0/prometheus/"
+            notifier:
+              url: "http://vmalertmanager-vm.monitoring.svc:9093/"
+        vmalertmanager:
+          enabled: true
+          spec:
+            replicaCount: 1
+        vmsingle:
+          enabled: false       # vmcluster mode
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

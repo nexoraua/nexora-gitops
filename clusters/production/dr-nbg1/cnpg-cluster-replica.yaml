@@ -1,0 +1,73 @@
+# CNPG streaming-replica bootstrap for NBG1 cold standby.
+# replicas: 0 by default — no Application targets this directory.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-business-production-nbg1
+  namespace: postgresql
+spec:
+  instances: 0   # COLD: flip to 3 on activation
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-superuser
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  storage:
+    storageClass: linstor-r3
+    size: 50Gi
+  walStorage:
+    storageClass: linstor-r3
+    size: 15Gi
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      memory: 8Gi
+  bootstrap:
+    pg_basebackup:
+      source: nexora-business-production
+  replica:
+    enabled: true
+    source: nexora-business-production
+  externalClusters:
+    - name: nexora-business-production
+      connectionParameters:
+        host: nexora-business-production-rw.fsn1.tailnet.nxua.ts.net
+        user: streaming_replica
+        sslmode: require
+      password:
+        name: cnpg-replication
+        key: password
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-production-nbg1/"
+      endpointURL: "https://nbg1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 4
+      data:
+        compression: gzip
+        jobs: 4

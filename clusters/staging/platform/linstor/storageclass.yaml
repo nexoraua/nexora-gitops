@@ -1,0 +1,20 @@
+# linstor-r1 — staging StorageClass. autoPlace: 1 means LINSTOR
+# allocates a single replica on the node where the consumer pod lands.
+# No DRBD replication, native-local IOPS — fine for a single-stateful-
+# node staging cluster. Production uses linstor-r3 (autoPlace 3) with
+# DRBD replication across three stateful nodes.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-r1
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: linstor.csi.linbit.com
+parameters:
+  linstor.csi.linbit.com/storagePool: pool0
+  linstor.csi.linbit.com/autoPlace: "1"
+  linstor.csi.linbit.com/resourceGroup: linstor-r1
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain   # avoid accidental data loss during testing
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

@@ -1,0 +1,32 @@
+# Authentik blueprint manifests (ConfigMaps mounted into the Authentik
+# server pod at /blueprints). Without this Application the blueprint
+# files under clusters/staging/platform/authentik/blueprints/ are
+# orphaned — the goauthentik chart never sees them, the Vault OIDC
+# provider is never created, and the kv/nexora/staging/vault-oidc
+# bootstrap step in platform/secrets/README.md can never be satisfied.
+#
+# Sync wave 3: after Authentik itself (wave 2) is up so the server pod
+# picks up the ConfigMap on its next reconcile / restart, and before
+# vault-config (wave 4) which depends on the generated OIDC client.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-blueprints
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/staging/platform/authentik/blueprints
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

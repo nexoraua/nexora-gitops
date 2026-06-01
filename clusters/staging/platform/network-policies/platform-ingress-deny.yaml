@@ -1,0 +1,185 @@
+# Ingress default-deny for the platform namespaces (argocd, authentik,
+# cert-manager, external-secrets, monitoring, traefik).
+#
+# Each NetworkPolicy below has podSelector: {} + policyTypes: [Ingress],
+# which makes it a default-deny for ingress — only the listed `from`
+# sources are allowed to connect to pods in that namespace. EGRESS is
+# deliberately NOT restricted here: these namespaces have broad, dynamic
+# egress (cert-manager→ACME, argocd→GitHub/Helm repos, Alloy scrapes
+# every namespace) that a static allowlist would make brittle. Egress
+# lockdown is a separate Cilium toFQDNs effort.
+#
+# tailscale is intentionally excluded — a subnet router is an L3
+# forwarder; a NetworkPolicy on it fights its purpose and risks lockout.
+#
+# Common allowances:
+#   - intra-namespace: pods in a namespace trust each other.
+#   - from monitoring: Grafana Alloy scrapes pod metrics cluster-wide.
+# Webhook namespaces additionally allow ingress from the kube-apiserver
+# via a CiliumNetworkPolicy (kube-apiserver is not selectable by a plain
+# NetworkPolicy) — without it, failurePolicy=Fail webhooks would break
+# every CRD write.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: argocd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # argocd-server UI is published through Traefik.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: authentik
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # authentik-server UI is published through Traefik.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+    # The namespace also hosts the authentik CNPG Postgres cluster; the
+    # CloudNativePG operator (cnpg-system) must reach those instances.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: cert-manager
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: external-secrets
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Intra-namespace covers Alloy→targets, vminsert, vmstorage, Loki,
+    # Tempo, vmalert→alertmanager — the whole observability mesh.
+    - from:
+        - podSelector: {}
+    # Grafana UI is published through Traefik.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: traefik
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # Public entrypoint — web (8000) and websecure (8443) reachable from
+    # anywhere (no `from`). The dashboard (8080) and metrics (9100)
+    # ports stay restricted to the rules above.
+    - ports:
+        - port: 8000
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+---
+# kube-apiserver → admission webhook ingress. kube-apiserver cannot be
+# selected by a plain NetworkPolicy, so these use Cilium's named entity.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: cert-manager
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: external-secrets
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: monitoring
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver

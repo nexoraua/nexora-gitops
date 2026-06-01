@@ -1,0 +1,50 @@
+# Production StorageClasses.
+#
+# linstor-r1 — single-replica local-IOPS; used for ephemeral or
+# rebuild-on-loss data (vmstorage chunks, Loki on-disk cache,
+# Tempo buffer, RabbitMQ persistence — RMQ replicates at the app
+# layer with quorum queues, so r1 is sufficient and saves disk).
+#
+# linstor-r3 — three-replica synchronous DRBD across the 3 stateful
+# nodes (stateful-1/2/3 via pod-anti-affinity, satisfied because each
+# stateful node carries pool0 from pool-stateful). Used by CNPG (data
+# + WAL) so that a node loss does not lose committed transactions —
+# CNPG also runs 3 synchronous-replica instances on top, so the data
+# is replicated both at the DB layer and at the storage layer (defense
+# in depth on the tier that holds money).
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-r1
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: linstor.csi.linbit.com
+parameters:
+  linstor.csi.linbit.com/storagePool: pool0
+  linstor.csi.linbit.com/autoPlace: "1"
+  linstor.csi.linbit.com/resourceGroup: linstor-r1
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-r3
+provisioner: linstor.csi.linbit.com
+parameters:
+  linstor.csi.linbit.com/storagePool: pool0
+  linstor.csi.linbit.com/autoPlace: "3"
+  # Replicas only on the database nodepool (stateful-1/2/3); DRBD
+  # synchronously replicates writes across all three. allowRemoteVolumeAccess
+  # is FALSE here — every consumer (CNPG instance) carries
+  # nodeSelector=nodepool=database + pod-anti-affinity so each PG
+  # instance always runs on the node that holds a local replica.
+  linstor.csi.linbit.com/replicasOnSame: "nodepool=database"
+  linstor.csi.linbit.com/resourceGroup: linstor-r3
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

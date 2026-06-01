@@ -1,0 +1,137 @@
+# Vault HA — 3-replica Raft cluster, the root of secret material for the
+# whole production cluster (ESO uses it as the only ClusterSecretStore).
+#
+# Day-1 boot path:
+#   1. `vault operator init` produces 5 Shamir keys + initial root token
+#      (held by ops in 1Password "Nexora Breakglass").
+#   2. Unseal all 3 replicas manually with 3 of 5 shares.
+#   3. Migrate to AWS KMS Transit auto-unseal via the post-init runbook
+#      (ADR-I-0005) — Transit key alias/nexora-transit-production. After
+#      that, replicas auto-unseal on restart.
+#
+# In-cluster TLS stays disabled — Cilium WireGuard handles node-to-node
+# encryption (cilium_enable_encryption=true per the design). External
+# access goes through Traefik on vault.nxua.dev with a Let's Encrypt
+# cert and Cloudflare Access JWT assertion in front.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  annotations:
+    # Vault first — everything else uses External Secrets via Vault backend.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: apps
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.32.0
+    helm:
+      values: |
+        global:
+          tlsDisable: true
+        server:
+          ha:
+            enabled: true
+            replicas: 3
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+                listener "tcp" {
+                  tls_disable = 1
+                  address     = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                }
+                storage "raft" {
+                  path = "/vault/data"
+                  retry_join {
+                    leader_api_addr = "http://vault-0.vault-internal:8200"
+                  }
+                  retry_join {
+                    leader_api_addr = "http://vault-1.vault-internal:8200"
+                  }
+                  retry_join {
+                    leader_api_addr = "http://vault-2.vault-internal:8200"
+                  }
+                }
+                # AWS KMS transit auto-unseal. Initial unseal is manual
+                # Shamir 5/3; the runbook then migrates to seal type
+                # transit using the alias/nexora-transit-production key
+                # (KMS in eu-central-1, IAM role for the vault SA).
+                # Once migrated, the unseal stanza below is what brings
+                # replicas back up automatically on restart. Until
+                # migration the stanza is inactive and Vault uses Shamir.
+                seal "awskms" {
+                  region     = "eu-central-1"
+                  kms_key_id = "alias/nexora-transit-production"
+                }
+                service_registration "kubernetes" {}
+          dataStorage:
+            enabled: true
+            # 20 GiB on hcloud-volumes (Hetzner block storage). Vault
+            # Raft state is small but write-heavy under load; a managed
+            # block volume gives durability independent of LINSTOR and
+            # survives pod re-creation without depending on the storage
+            # operator boot order. Per Raft node.
+            size: 20Gi
+            storageClass: hcloud-volumes
+          # Production Vault replicas spread across system + workers
+          # nodes. Anti-affinity by hostname (required) — losing a single
+          # node never breaks the 2-of-3 quorum. Tolerations are scoped
+          # to the system + database pools; on prod the scheduler picks
+          # 3 hosts among system-1, system-2, worker-1, worker-2.
+          affinity: |
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vault
+                      app.kubernetes.io/instance: vault
+                      component: server
+                  topologyKey: kubernetes.io/hostname
+          tolerations: |
+            - key: nodepool
+              operator: Equal
+              value: system
+              effect: NoSchedule
+            - key: nodepool
+              operator: Equal
+              value: database
+              effect: NoSchedule
+          # ServiceAccount carries the AWS KMS IAM role for transit
+          # auto-unseal (IRSA-style via OIDC federation; the role ARN is
+          # injected at boot from the vault-aws-kms ExternalSecret).
+          serviceAccount:
+            create: true
+            name: vault
+            annotations:
+              eks.amazonaws.com/role-arn: arn:aws:iam::727990091861:role/nexora-vault-transit-unseal-production
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        ui:
+          enabled: true
+          serviceType: ClusterIP
+        # Sidecar injector disabled — ESO is the only secret materialiser
+        # on this cluster.
+        injector:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault-system
+  syncPolicy:
+    automated:
+      prune: false  # never auto-prune Vault — manual approval only
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

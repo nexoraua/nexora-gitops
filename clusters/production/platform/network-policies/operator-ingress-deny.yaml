@@ -1,0 +1,136 @@
+# Ingress default-deny for the operator namespaces:
+#   - cnpg-system            (CloudNativePG operator + admission webhook)
+#   - rabbitmq-system        (RabbitMQ Cluster Operator + admission webhook)
+#   - dragonfly-system       (Dragonfly Operator + admission webhook)
+#   - piraeus-datastore      (Piraeus / LINSTOR operator + admission webhook)
+#
+# Mirrors clusters/production/platform/network-policies/platform-ingress-deny.yaml.
+# Each NetworkPolicy below has podSelector: {} + policyTypes: [Ingress], which
+# makes it a default-deny for ingress — only the listed `from` sources are
+# allowed to connect. EGRESS is intentionally NOT restricted here: operators
+# need broad, dynamic egress (CRDs in every namespace, GitHub/registry pulls,
+# LINSTOR satellite traffic) that a static allowlist would make brittle.
+#
+# Common allowances:
+#   - intra-namespace: pods in a namespace trust each other.
+#   - from monitoring: Grafana Alloy scrapes pod metrics cluster-wide.
+#
+# kube-apiserver -> admission webhook ingress: every operator listed here ships
+# at least one ValidatingWebhookConfiguration / MutatingWebhookConfiguration,
+# so we add a CiliumNetworkPolicy fromEntities=kube-apiserver per namespace
+# (kube-apiserver is not selectable by a plain NetworkPolicy). Without it,
+# failurePolicy=Fail webhooks would break every CRD write.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: cnpg-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: rabbitmq-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: dragonfly-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-allowlist
+  namespace: piraeus-datastore
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+# kube-apiserver -> admission webhook ingress. kube-apiserver cannot be
+# selected by a plain NetworkPolicy, so these use Cilium's named entity.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: cnpg-system
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: rabbitmq-system
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: dragonfly-system
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ingress-apiserver-webhook
+  namespace: piraeus-datastore
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - kube-apiserver

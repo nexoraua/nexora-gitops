@@ -1,0 +1,36 @@
+# Placeholder ConfigMap for the Kubernetes Cluster Overview dashboard.
+# Replace JSON with the export from grafana.com/grafana/dashboards/15757
+# (kube-prometheus mixin) after kube-state-metrics + node-exporter are
+# scraping reliably.
+#
+# Upstream: https://grafana.com/grafana/dashboards/15757
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-kubernetes-cluster-overview
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  kubernetes-cluster-overview.json: |
+    {
+      "uid": "k8s-cluster-overview-placeholder",
+      "title": "Kubernetes / Cluster Overview (placeholder)",
+      "tags": ["kubernetes", "overview", "placeholder"],
+      "timezone": "browser",
+      "editable": true,
+      "schemaVersion": 39,
+      "version": 1,
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "Import upstream Kubernetes Cluster Overview",
+          "gridPos": {"x": 0, "y": 0, "w": 24, "h": 6},
+          "options": {
+            "mode": "markdown",
+            "content": "## Kubernetes Cluster Overview placeholder\n\nImport [grafana.com/grafana/dashboards/15757](https://grafana.com/grafana/dashboards/15757)\nand replace this JSON. Pin to the kube-prometheus-stack version that\nmatches `clusters/staging/apps/kube-prometheus-stack.yaml` targetRevision."
+          }
+        }
+      ]
+    }

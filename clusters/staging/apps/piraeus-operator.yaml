@@ -1,0 +1,34 @@
+# Piraeus Operator — LINSTOR-based CSI storage.
+# Installs the operator + CRDs from the upstream kustomize bundle.
+# Backend config (LinstorCluster + LinstorSatelliteConfiguration +
+# StorageClass) is in clusters/staging/platform/linstor/ via a separate
+# Application so the CRDs are up before we reference them.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: piraeus-operator
+  namespace: argocd
+  annotations:
+    # Wave -2: before anything else that wants persistent storage.
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/piraeusdatastore/piraeus-operator.git
+    targetRevision: v2.10.7
+    path: config/default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated:
+      prune: false   # never auto-prune storage operator
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # Operator's CRDs are large; ApplyOutOfSync handles that.
+      - ApplyOutOfSyncOnly=true

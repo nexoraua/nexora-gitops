@@ -1,0 +1,95 @@
+# Authentik state PostgreSQL cluster — separate from business data
+# for blast-radius and compliance scope isolation.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-authentik-staging
+  namespace: authentik
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-authentik-superuser
+  # Grafana Alloy scrapes by prometheus.io/scrape annotation; CNPG
+  # propagates inheritedMetadata to the instance pods. Port 9187 is
+  # the CNPG metrics exporter. This is what makes the cnpg-backup-alerts
+  # VMRule cover this cluster too.
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  postgresql:
+    pg_hba:
+      # Per-role least-privilege: only the `authentik` role against the
+      # `authentik` database, only from the cluster CNI range. No bare
+      # `host all all` rule. CNPG auto-appends a managed
+      # `host replication streaming_replica ...` entry — do not duplicate.
+      - host authentik authentik 10.50.0.0/16 scram-sha-256
+  bootstrap:
+    initdb:
+      database: authentik
+      owner: authentik
+      secret:
+        name: authentik-postgres-credentials
+  storage:
+    storageClass: linstor-r1
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  affinity:
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  monitoring:
+    # PodMonitor disabled: nothing consumes it (vmagent is off, Alloy
+    # scrapes via the prometheus.io/scrape annotation set above).
+    enablePodMonitor: false
+  # Continuous backup of the Authentik identity database: WAL archiving
+  # + daily base backup to Hetzner Object Storage bucket
+  # nexora-cnpg-backups-authentik-staging (FSN1) — kept in a separate
+  # bucket from the business cluster for blast-radius isolation.
+  # Retention is 7 days on staging.
+  backup:
+    retentionPolicy: "7d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-authentik-staging/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+---
+# Daily base backup at 04:30 (staggered an hour after the business
+# cluster's 03:30 to avoid concurrent S3 PUT bursts against Hetzner
+# Object Storage); with continuous WAL archiving this gives PITR within
+# the 7-day retention window.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-authentik-staging-daily
+  namespace: authentik
+spec:
+  schedule: "0 30 4 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-authentik-staging
+  method: barmanObjectStore

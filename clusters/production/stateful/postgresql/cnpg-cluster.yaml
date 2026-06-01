@@ -1,0 +1,149 @@
+# Business PostgreSQL 18 cluster — production.
+# Schemas per bounded context — identity, wallet, investments, contracts,
+# notifications, fop, audit, quartz (Quartz.NET state).
+#
+# Production tuning vs develop:
+#   - 3 instances, podAntiAffinity required topologyKey=hostname so each
+#     replica lands on a distinct database node (stateful-1/2/3 per the
+#     spread placement group `nexora-prod-db-pg`)
+#   - synchronous replication: any 1 sync replica required for a commit
+#     to ack (min=1, max=1, method=any). This gives single-node-loss
+#     durability without quorum write penalty.
+#   - storage on linstor-r3 (DRBD synchronous to 3 replicas) — defense
+#     in depth at the storage layer for the tier that holds money.
+#   - resources sized for CCX23 (8 vCPU / 32 GiB) — 1 vCPU request / 4 GiB
+#     working set, 12 GiB peak. Headroom over 8 GiB absorbs the
+#     work_mem * max_connections worst case (200 * 32 MB = 6.4 GiB) plus
+#     shared_buffers (3 GiB) without OOMKilling on connection storms.
+#   - pg_stat_statements + pgaudit; wal_level=logical for future CDC.
+#   - backup primary -> mutable Hetzner Object Storage (30 d), DR copy
+#     synced by an external rclone CronJob to AWS S3 with Object Lock
+#     COMPLIANCE 35 d + SSE-KMS (ADR-I-0005). The sync manifest lives in
+#     stateful/postgresql/cnpg-dr-sync.yaml.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-business-production
+  namespace: postgresql
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-superuser
+  # Grafana Alloy scrapes by prometheus.io/scrape annotation (vmagent is
+  # disabled cluster-wide), so the instance pods must carry it. CNPG
+  # propagates inheritedMetadata to every managed resource, pods
+  # included. Port 9187 is the CNPG metrics exporter.
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  storage:
+    storageClass: linstor-r3
+    size: 50Gi
+  walStorage:
+    storageClass: linstor-r3
+    size: 15Gi
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      memory: 12Gi
+  # Synchronous replication: 1 of the 2 standbys must ack before commit
+  # returns. method=any picks whichever sync replica is fastest, so a
+  # single slow node never blocks writes cluster-wide. With 3 instances
+  # this gives single-node-failure durability without quorum penalty.
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  postgresql:
+    parameters:
+      # max_connections capped at 200 — every backend reserves ~10 MB +
+      # work_mem peaks, so 400 was tail-risk OOM territory under the
+      # 12 GiB limit. Pool sizing lives in PgBouncer (server-side), apps
+      # do not connect direct.
+      max_connections: "200"
+      # shared_buffers ~= 25% of the 12 GiB limit; effective_cache_size
+      # ~= 75% (planner hint — it does not allocate, just guides plans).
+      shared_buffers: "3GB"
+      effective_cache_size: "9GB"
+      work_mem: "32MB"
+      wal_level: "logical"
+      pg_stat_statements.track: "all"
+    pg_hba:
+      # Per-role least-privilege: the app role can only reach its own
+      # business database from the cluster CNI range. No bare `all all`
+      # rule — that previously let any role authenticate to any database.
+      # CNPG auto-appends a `host replication streaming_replica ...` entry
+      # for managed replication; do not duplicate it here.
+      - host nexora nexora_app 10.60.0.0/16 scram-sha-256
+    shared_preload_libraries:
+      - pg_stat_statements
+      - pgaudit
+  monitoring:
+    # PodMonitor disabled: nothing consumes it (vmagent is off, Alloy
+    # scrapes via the prometheus.io/scrape annotation set above).
+    enablePodMonitor: false
+  # Continuous backup: WAL archiving + scheduled base backups to Hetzner
+  # Object Storage (FSN1), bucket nexora-cnpg-backups-production.
+  #
+  # IMMUTABILITY (per ADR-I-0005):
+  #   - The Hetzner primary is MUTABLE (Hetzner Object Lock is weak — a
+  #     delete_object without BypassGovernanceRetention still succeeds).
+  #   - A separate rclone CronJob (cnpg-dr-sync.yaml) copies every new
+  #     object to AWS S3 nexora-cnpg-backups-production-dr with Object
+  #     Lock COMPLIANCE 35 d + SSE-KMS alias/nexora-backups-production.
+  #     That AWS bucket is the trustworthy WORM copy.
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-production/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      # NOTE: Hetzner Object Storage rejects the SSE header (AES256) with
+      # InvalidArgument, so barmanObjectStore-level `encryption:` cannot
+      # be set here. Backup data on Hetzner therefore relies on Hetzner's
+      # at-rest encryption. The AUTHORITATIVE encryption-at-rest happens
+      # on the AWS DR copy via SSE-KMS.
+      wal:
+        compression: gzip
+        maxParallel: 4
+      data:
+        compression: gzip
+        jobs: 4
+---
+# Daily base backup at 02:00 (production gets the earliest slot in the
+# staggered window — dev runs 04:00, staging 03:00, production 02:00 —
+# so the heaviest backup load is on cluster idle hours). Combined with
+# continuous WAL archiving this gives point-in-time recovery within the
+# 30-day retention window on the primary, and a 35-day immutable window
+# on the DR copy.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-business-production-daily
+  namespace: postgresql
+spec:
+  schedule: "0 0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-business-production
+  method: barmanObjectStore

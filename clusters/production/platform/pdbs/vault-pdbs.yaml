@@ -1,0 +1,16 @@
+# PodDisruptionBudget for Vault HA (Raft, 3 replicas).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vault-pdb
+  namespace: vault-system
+spec:
+  # Raft quorum requires 2 of 3 replicas. Allow at most 1 disruption at
+  # a time. Drain is gated by readiness — an unsealed replica must be
+  # back before the next one is evicted, which matches Vault HA safety.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      app.kubernetes.io/instance: vault
+      component: server

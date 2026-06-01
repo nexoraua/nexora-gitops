@@ -1,0 +1,41 @@
+# Shared Traefik middlewares applied across production IngressRoutes.
+# Per-route attachment is in each app's ingress manifest.
+---
+# Per-IP rate limit on the public edge. Average 100 req/s with a burst
+# of 200 — tuned for the public API + admin login surface; private
+# internal traffic bypasses this middleware.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-global
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 100
+    burst: 200
+    period: 1s
+    sourceCriterion:
+      ipStrategy:
+        depth: 1   # behind Cloudflare; trust the CF-Connecting-IP header
+---
+# Secure HTTP headers: HSTS preload, no-sniff, frame-deny, strict
+# referrer, CSP default-src 'self'. Applied to UI hosts (admin, grafana,
+# argocd) — NOT to api.nxua.dev (the API sets its own CSP/CORS).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-headers
+  namespace: traefik
+spec:
+  headers:
+    stsSeconds: 63072000
+    stsIncludeSubdomains: true
+    stsPreload: true
+    forceSTSHeader: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: strict-origin-when-cross-origin
+    frameDeny: true
+    customResponseHeaders:
+      Permissions-Policy: "geolocation=(), microphone=(), camera=()"
+      X-Content-Type-Options: nosniff

@@ -1,0 +1,109 @@
+# cluster-autoscaler — SCAFFOLDING (per design notes).
+#
+# State at day-1: this Application is committed with replicas: 0 in the
+# controller spec — the manifest is wired, the IAM role for the hcloud
+# token is provisioned by Terraform, but the autoscaler does not run
+# (no API calls, no node creation/deletion).
+#
+# Flip-on when:
+#   - Steady-state pending pods because workers pool is saturated, OR
+#   - Roadmap requires bursty workloads (event ingest, batch jobs)
+#
+# Activation = `replicaCount: 1` + verify min=2 / max=6 on the workers
+# group via the HCLOUD_CLUSTER_CONFIG mapping. The taints on
+# control-plane / system / database pools mean autoscaler will only ever
+# scale the untainted `workers` pool (CPX31).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-autoscaler
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    targetRevision: 9.46.0
+    helm:
+      values: |
+        # SCAFFOLDING: replicas=0 keeps the manifest applied without the
+        # autoscaler actually running. Set to 1 to activate.
+        replicaCount: 0
+        cloudProvider: hetzner
+        autoDiscovery:
+          clusterName: nexora-production
+        extraEnv:
+          HCLOUD_CLUSTER_CONFIG: |
+            {
+              "imagesForArch": {
+                "arm64": [],
+                "amd64": []
+              },
+              "nodeConfigs": {
+                "workers": {
+                  "cloudInit": "",
+                  "labels": {
+                    "nodepool": "workers",
+                    "environment": "production"
+                  },
+                  "taints": []
+                }
+              }
+            }
+          HCLOUD_NETWORK: nexora-production
+          HCLOUD_FIREWALL: nexora-production-workers
+          HCLOUD_SSH_KEY: nexora-ops
+          HCLOUD_REGION: fsn1
+          HCLOUD_IMAGE: ""
+          HCLOUD_TOKEN: ""
+        extraEnvSecrets:
+          HCLOUD_TOKEN:
+            name: hcloud-autoscaler
+            key: token
+        autoscalingGroups:
+          - name: workers
+            minSize: 2
+            maxSize: 6
+            instanceType: cpx31
+            region: fsn1
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        rbac:
+          create: true
+          serviceAccount:
+            create: true
+            name: cluster-autoscaler
+        extraArgs:
+          v: 4
+          stderrthreshold: info
+          scale-down-enabled: "true"
+          scale-down-utilization-threshold: 0.5
+          scale-down-delay-after-add: 10m
+          scale-down-unneeded-time: 10m
+          max-node-provision-time: 15m
+          # Don't evict pods on stateful nodes — autoscaler shouldn't
+          # touch CNPG / dragonfly / rabbitmq pods. The pool itself
+          # carries the database taint so this is belt-and-braces.
+          balance-similar-node-groups: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

@@ -1,0 +1,35 @@
+# Grafana dashboards bundled as ConfigMaps.
+# Grafana sidecar auto-loads any ConfigMap in the monitoring namespace
+# carrying the label grafana_dashboard=1.
+#
+# The actual JSON payloads are copied verbatim from
+# clusters/develop/platform/grafana-dashboards/ at deploy time — they
+# describe the SAME datasources (VictoriaMetrics / Loki / Tempo) so the
+# dashboards are environment-agnostic. Keeping them in develop's tree
+# avoids JSON drift; this Application points at the develop folder.
+#
+# When production-specific dashboards arrive (multi-region overlays,
+# DR sync lag), copy or fork them into
+# clusters/production/platform/grafana-dashboards/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/grafana-dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

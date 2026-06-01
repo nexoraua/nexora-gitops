@@ -1,0 +1,25 @@
+# LINSTOR runtime config — applied AFTER piraeus-operator installs the
+# CRDs. References LinstorCluster + LinstorSatelliteConfiguration +
+# StorageClasses (linstor-r3 + linstor-r1).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linstor-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/linstor
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

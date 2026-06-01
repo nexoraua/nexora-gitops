@@ -1,0 +1,102 @@
+# Authentik central IdP — OIDC for admin app, ArgoCD, Grafana, vmui,
+# RabbitMQ Management, Vault UI. Upstream OIDC source: Google Workspace.
+# Production: 2 server + 2 worker replicas, anti-affinity preferred (not
+# required — Authentik tolerates same-node co-tenancy for scale).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: apps
+  source:
+    repoURL: https://charts.goauthentik.io
+    chart: authentik
+    targetRevision: 2024.10.5
+    helm:
+      values: |
+        global:
+          envFrom:
+            - secretRef:
+                name: authentik-bootstrap
+        authentik:
+          error_reporting:
+            enabled: false
+          postgresql:
+            host: nexora-authentik-production-rw.authentik.svc
+            name: authentik
+            user: authentik
+          redis:
+            host: nexora-cache.dragonfly.svc.cluster.local
+        server:
+          replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: server
+                    topologyKey: kubernetes.io/hostname
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - auth.nxua.dev
+            tls:
+              - secretName: authentik-tls
+                hosts:
+                  - auth.nxua.dev
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+        worker:
+          replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: worker
+                    topologyKey: kubernetes.io/hostname
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        postgresql:
+          enabled: false   # provided by CloudNativePG (clusters/production/stateful/authentik/)
+        redis:
+          enabled: false   # provided by Dragonfly (apps/dragonfly-cache.yaml)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

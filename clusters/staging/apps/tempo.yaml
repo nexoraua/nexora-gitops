@@ -1,0 +1,56 @@
+# Tempo — distributed tracing backend. On staging we use the local
+# filesystem on a LINSTOR PVC; production will swap to S3 (Hetzner
+# Object Storage) once that bucket exists. Retention is 3 days, the
+# narrowest window that still covers a typical incident replay loop.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo
+    targetRevision: 1.16.0
+    helm:
+      values: |
+        tempo:
+          storage:
+            trace:
+              backend: local
+              local:
+                path: /var/tempo/traces
+          retention: 72h     # 3 days on staging; prod retention is 30d
+        persistence:
+          enabled: true
+          storageClassName: linstor-r1
+          size: 10Gi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # volumeClaimTemplates are immutable after creation and Kubernetes
+  # defaults them (apiVersion/kind/volumeMode/status), so the live
+  # StatefulSet never byte-matches the chart output — a known ArgoCD
+  # normalization gap that otherwise leaves the app perpetually OutOfSync.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      name: tempo
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

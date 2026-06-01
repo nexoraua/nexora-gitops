@@ -1,0 +1,26 @@
+# PodDisruptionBudgets for stateful workloads and the monitoring stack.
+# Manifests live in clusters/production/platform/pdbs/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pdbs
+  namespace: argocd
+  annotations:
+    # Sync after operators install their CRDs / workloads (wave 1) so the
+    # PDB selectors match Pods that already exist.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/pdbs
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

@@ -1,0 +1,27 @@
+# PodDisruptionBudgets for CloudNativePG clusters.
+# Both production clusters run 3 instances with sync replication; allow
+# maxUnavailable=1 so rolling restarts triggered by
+# primaryUpdateStrategy=unsupervised keep moving, but the 2-of-3 sync
+# quorum is never broken.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-business-pdb
+  namespace: postgresql
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-business-production
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-authentik-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-authentik-production

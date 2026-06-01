@@ -1,0 +1,15 @@
+# PodDisruptionBudget for RabbitMQ Cluster Operator.
+# Selector keys follow the RabbitMQ Cluster Operator convention.
+# Staging runs a single replica; the PDB is advisory only.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq-pdb
+  namespace: rabbitmq
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexora-rabbitmq
+      app.kubernetes.io/component: rabbitmq

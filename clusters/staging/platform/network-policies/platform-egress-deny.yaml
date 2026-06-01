@@ -1,0 +1,181 @@
+# Egress lockdown for platform namespaces — the second half of the
+# network segmentation (ingress is in platform-ingress-deny.yaml).
+#
+# Applied incrementally, namespace by namespace. external-secrets is
+# first: it handles all secret material, and its egress is small and
+# entirely in-cluster (Vault + kube-apiserver + DNS), so it needs no
+# Cilium toFQDNs. argocd / cert-manager / authentik (which DO have
+# external egress) follow with toFQDNs allowlists. monitoring and
+# traefik are out of scope — their egress is dominated by in-cluster
+# traffic, where an egress policy adds little.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: external-secrets
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Vault — the only configured secret backend (ClusterSecretStore
+    # vault-kv → http://vault.vault-system.svc:8200).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: vault-system
+      ports:
+        - port: 8200
+          protocol: TCP
+    # Intra-namespace (harmless insurance for any controller chatter).
+    - to:
+        - podSelector: {}
+---
+# kube-apiserver egress — the ESO controllers watch and write
+# Kubernetes resources constantly. kube-apiserver is not selectable by
+# a plain NetworkPolicy, so this uses Cilium's named entity.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-apiserver
+  namespace: external-secrets
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+---
+# cert-manager egress. The issuers use the ACME DNS-01 flow via
+# Cloudflare, so cert-manager reaches: Let's Encrypt ACME, the
+# Cloudflare API, and — for the DNS-01 self-check — the zone's
+# authoritative nameservers (*.ns.cloudflare.com on port 53). The
+# kube-dns rule carries `rules.dns` so Cilium's DNS proxy learns the
+# FQDN→IP mappings that toFQDNs depends on.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: cert-manager
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: cert-manager
+    # Let's Encrypt ACME + Cloudflare API (DNS-01 solver).
+    - toFQDNs:
+        - matchName: "acme-v02.api.letsencrypt.org"
+        - matchName: "acme-staging-v02.api.letsencrypt.org"
+        - matchName: "api.cloudflare.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # DNS-01 self-check queries the zone's authoritative nameservers.
+    - toFQDNs:
+        - matchPattern: "*.ns.cloudflare.com"
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+# authentik egress. Authentik has no external upstream configured on
+# staging by default — its own egress is entirely in-cluster: Redis
+# (dragonfly) and its Postgres (the CNPG cluster co-located in this
+# namespace, reached intra-namespace). The namespace also hosts that
+# CNPG cluster, whose instance and backup/recovery Job pods need
+# egress to Hetzner Object Storage for WAL archiving + base backups
+# — hence the toFQDNs rule.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-allowlist
+  namespace: authentik
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    # Intra-namespace — authentik server/worker and the co-located
+    # CNPG Postgres cluster.
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: authentik
+    # Redis cache (Dragonfly).
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: dragonfly
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    # CNPG WAL archiving + base backups for the authentik cluster.
+    - toFQDNs:
+        - matchName: "fsn1.your-objectstorage.com"
+        - matchPattern: "*.fsn1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

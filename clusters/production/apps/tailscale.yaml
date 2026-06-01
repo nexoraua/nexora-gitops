@@ -1,0 +1,31 @@
+# Standalone Tailscale subnet router for production cluster.
+# Two replicas advertising 10.60.0.0/16 (Hetzner private network) into
+# the nxua tailnet. Provides the private cluster endpoint per the
+# design — kube API + pod IPs reachable from Tailscale without the
+# operator's public IP needing to land in TF_VAR_FIREWALL_ALLOWED_IPS.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-subnet-router
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/tailscale
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

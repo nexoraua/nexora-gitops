@@ -1,0 +1,17 @@
+# PodDisruptionBudget for Dragonfly.
+# Selector is aligned with the Dragonfly NetworkPolicy
+# (clusters/production/platform/network-policies/dragonfly-allow.yaml):
+# both target the standard `app.kubernetes.io/name: dragonfly` label so
+# the PDB protects exactly the pods the NetworkPolicy admits. The
+# operator labels the cache StatefulSet's pods with this label, plus
+# `app: nexora-cache` and `app.kubernetes.io/part-of: dragonfly`.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dragonfly-pdb
+  namespace: dragonfly
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dragonfly

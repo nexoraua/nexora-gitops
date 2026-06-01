@@ -1,0 +1,91 @@
+# cert-manager — issues Let's Encrypt certificates via Cloudflare DNS-01.
+# Production: 2 replicas each (controller, webhook, cainjector), system
+# pool anti-affinity. Issuers + Cloudflare API token secret are seeded by
+# Terraform (nexora-infra) and applied here as cluster resources.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.18.2
+      helm:
+        values: |
+          installCRDs: true
+          replicaCount: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          nodeSelector:
+            nodepool: system
+          tolerations:
+            - key: nodepool
+              operator: Equal
+              value: system
+              effect: NoSchedule
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: cert-manager
+                  topologyKey: kubernetes.io/hostname
+          webhook:
+            replicaCount: 2
+            podDisruptionBudget:
+              enabled: true
+              minAvailable: 1
+            nodeSelector:
+              nodepool: system
+            tolerations:
+              - key: nodepool
+                operator: Equal
+                value: system
+                effect: NoSchedule
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: webhook
+                    topologyKey: kubernetes.io/hostname
+          cainjector:
+            replicaCount: 2
+            podDisruptionBudget:
+              enabled: true
+              minAvailable: 1
+            nodeSelector:
+              nodepool: system
+            tolerations:
+              - key: nodepool
+                operator: Equal
+                value: system
+                effect: NoSchedule
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+    - repoURL: https://github.com/nexoraua/nexora-gitops.git
+      targetRevision: main
+      path: clusters/production/platform/cert-manager
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

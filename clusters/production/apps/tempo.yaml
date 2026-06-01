@@ -1,0 +1,75 @@
+# Tempo — distributed tracing backend (production: S3 on Hetzner
+# Object Storage). Microservices deployment mode, sized for HA:
+# distributor 2, ingester 3 (replication_factor 3 -> tolerates 1 ingester
+# loss with quorum), query-frontend 2, compactor 2. Each component is
+# independently scalable beyond these floors.
+# Retention 14 d (336 h).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo-distributed
+    targetRevision: 1.27.0
+    helm:
+      values: |
+        tempo:
+          structuredConfig:
+            compactor:
+              compaction:
+                block_retention: 336h
+            ingester:
+              replication_factor: 3
+        storage:
+          trace:
+            backend: s3
+            s3:
+              endpoint: fsn1.your-objectstorage.com
+              region: fsn1
+              bucket: nexora-production-tempo
+              forcepathstyle: true
+              insecure: false
+        # Credentials from tempo-s3 Secret (ESO).
+        global:
+          extraEnvFrom:
+            - secretRef:
+                name: tempo-s3
+        distributor:
+          replicas: 2
+          persistence:
+            enabled: false
+        ingester:
+          replicas: 3
+          persistence:
+            enabled: true
+            storageClass: linstor-r1
+            size: 20Gi
+        querier:
+          replicas: 2
+        queryFrontend:
+          replicas: 2
+        compactor:
+          replicas: 2
+        metricsGenerator:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

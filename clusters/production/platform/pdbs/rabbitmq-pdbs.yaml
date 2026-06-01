@@ -1,0 +1,13 @@
+# PodDisruptionBudget for RabbitMQ Cluster Operator.
+# 3 brokers, quorum queues need 2 of 3 — maxUnavailable: 1.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq-pdb
+  namespace: rabbitmq
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexora-rabbitmq
+      app.kubernetes.io/component: rabbitmq

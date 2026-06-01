@@ -1,0 +1,26 @@
+# Hubble UI exposed at hubble.nxua.dev behind Cloudflare Access.
+# Cilium itself + Hubble are installed by the Talos module (Terraform);
+# this Application only adds the public ingress and the CF Access
+# JWT-assertion middleware reference.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hubble-ingress
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/hubble
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

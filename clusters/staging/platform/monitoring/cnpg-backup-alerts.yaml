@@ -1,0 +1,98 @@
+# Alerting rules for CloudNativePG backup health (staging business
+# cluster). vmalert evaluates every VMRule in the cluster
+# (selectAllByDefault=true) and routes firing alerts to Alertmanager.
+#
+# Metric names were verified against the live exporter on the develop
+# cluster (port 9187) — not assumed. The CNPG instance pods are
+# scraped by Grafana Alloy via the prometheus.io/scrape annotation set
+# in cnpg-cluster.yaml.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: cnpg-backup-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: nexora
+    nexora.io/component: cnpg-backup
+spec:
+  groups:
+    - name: cnpg-backups
+      rules:
+        # A base backup failed and has not since been followed by a
+        # successful one. CNPG does not auto-retry a failed scheduled
+        # backup, so this stays until the next daily run succeeds.
+        - alert: CNPGBackupFailed
+          expr: cnpg_collector_last_failed_backup_timestamp > cnpg_collector_last_available_backup_timestamp
+          for: 15m
+          labels:
+            severity: critical
+            component: cnpg-backup
+          annotations:
+            summary: "CNPG base backup failed for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              The most recent CNPG base backup failed and has not been
+              followed by a successful one — the PITR base is stale.
+              Inspect: kubectl get backup -n {{ $labels.namespace }}.
+
+        # No successful base backup in over 28h. The daily
+        # ScheduledBackup runs at 03:00, so 28h means a run was missed.
+        # Also fires when a cluster has never produced a base backup
+        # (timestamp is 0).
+        - alert: CNPGNoRecentBackup
+          expr: time() - cnpg_collector_last_available_backup_timestamp > 28 * 3600
+          for: 1h
+          labels:
+            severity: critical
+            component: cnpg-backup
+          annotations:
+            summary: "CNPG cluster {{ $labels.namespace }}/{{ $labels.pod }} has no recent base backup"
+            description: >-
+              No successful CNPG base backup in over 28h (daily
+              ScheduledBackup runs at 03:00). The 7-day PITR window on
+              staging depends on a fresh base backup.
+
+        # The most recent WAL archive attempt failed. Continuous
+        # archiving is the foundation of PITR — if it stalls, the
+        # recovery window stops advancing.
+        - alert: CNPGWALArchiveFailing
+          expr: cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time
+          for: 5m
+          labels:
+            severity: critical
+            component: cnpg-backup
+          annotations:
+            summary: "CNPG WAL archiving is failing for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              The most recent WAL archive attempt failed (last_failed_time
+              is newer than last_archived_time). PITR cannot advance.
+              Check the barman-cloud-wal-archive logs on the instance pod.
+
+        # .ready WAL segments accumulating in pg_wal/archive_status —
+        # archiving is stuck even if a single attempt has not yet
+        # flipped last_failed_time. Left unchecked the WAL volume fills.
+        - alert: CNPGWALFilesPilingUp
+          expr: cnpg_collector_pg_wal_archive_status{value="ready"} > 20
+          for: 15m
+          labels:
+            severity: critical
+            component: cnpg-backup
+          annotations:
+            summary: "CNPG WAL archive backlog growing for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              {{ $value }} WAL segments are waiting to be archived —
+              archiving is stuck. The WAL volume will fill and PITR
+              cannot advance.
+
+        # The exporter itself is down: backup and WAL-archiving health
+        # cannot be evaluated, so the alerts above go blind.
+        - alert: CNPGBackupCollectorDown
+          expr: cnpg_collector_up == 0
+          for: 10m
+          labels:
+            severity: warning
+            component: cnpg-backup
+          annotations:
+            summary: "CNPG metrics collector down for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              The CNPG metrics exporter is not reporting. Backup and WAL
+              archiving health cannot be evaluated while it is down.

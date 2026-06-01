@@ -1,0 +1,28 @@
+# Grafana dashboards bundled as ConfigMaps.
+# Grafana sidecar (apps/grafana.yaml -> sidecar.dashboards) auto-loads
+# any ConfigMap in the monitoring namespace carrying label
+# `grafana_dashboard=1`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards
+  namespace: argocd
+  annotations:
+    # Grafana is sync-wave 2; load dashboards just after so the sidecar
+    # discovers them on first start.
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/staging/platform/grafana-dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

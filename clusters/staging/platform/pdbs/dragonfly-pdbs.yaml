@@ -1,0 +1,15 @@
+# PodDisruptionBudget for Dragonfly.
+# Selector matches labels applied by the Dragonfly Operator.
+# Staging runs a single instance; the PDB is advisory only.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dragonfly-pdb
+  namespace: dragonfly
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: nexora-cache
+      app.kubernetes.io/part-of: dragonfly

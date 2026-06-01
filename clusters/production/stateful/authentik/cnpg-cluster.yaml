@@ -1,0 +1,94 @@
+# Authentik state PostgreSQL cluster — production.
+# Separate from business data for blast-radius + compliance isolation.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-authentik-production
+  namespace: authentik
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-authentik-superuser
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  bootstrap:
+    initdb:
+      database: authentik
+      owner: authentik
+      secret:
+        name: authentik-postgres-credentials
+  storage:
+    storageClass: linstor-r3
+    size: 20Gi
+  walStorage:
+    storageClass: linstor-r3
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  postgresql:
+    pg_hba:
+      # Per-role least-privilege: only the `authentik` role against the
+      # `authentik` database, only from the cluster CNI range. No bare
+      # `host all all` rule. CNPG auto-appends a managed
+      # `host replication streaming_replica ...` entry — do not duplicate.
+      - host authentik authentik 10.60.0.0/16 scram-sha-256
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  monitoring:
+    enablePodMonitor: false
+  # Continuous backup of the Authentik identity database. Mutable primary
+  # on Hetzner; the AWS S3 immutable DR copy is handled by the per-cluster
+  # rclone CronJob in cnpg-dr-sync.yaml (Object Lock COMPLIANCE 35d +
+  # SSE-KMS, per ADR-I-0005).
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-authentik-production/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+---
+# Daily base backup at 02:30 (staggered 30 min after the business cluster's
+# 02:00; production keeps the earliest window so dev/staging backups land
+# later when the cluster is busier).
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-authentik-production-daily
+  namespace: authentik
+spec:
+  schedule: "0 30 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-authentik-production
+  method: barmanObjectStore

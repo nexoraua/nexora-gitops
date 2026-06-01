@@ -1,0 +1,32 @@
+# Root Application for production cluster — app-of-apps pattern.
+# Apply once with: kubectl apply -n argocd -f clusters/production/root.yaml
+# All other Applications are managed by this one through clusters/production/apps/.
+#
+# Day-1 production runs single-region in Hetzner FSN1 (per ADR-I-0003).
+# Multi-region NBG1/HEL1 scaffolding is committed under
+# clusters/production/dr-nbg1/ and clusters/production/dr-hel1/ but is
+# NOT referenced by any Application here — activation requires adding
+# clusters/production/apps/dr-{nbg1|hel1}.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: production-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

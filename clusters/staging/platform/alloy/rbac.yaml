@@ -1,0 +1,31 @@
+# Supplementary RBAC for Alloy — the chart's default ClusterRole covers
+# pods/services/endpoints discovery but NOT the node proxy subresource.
+# Scraping kubelet /metrics and /metrics/cadvisor through the apiserver
+# proxy (used by the kubelet + cadvisor scrape jobs) needs nodes/proxy
+# and nodes/metrics.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-node-metrics
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/metrics
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-node-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-node-metrics
+subjects:
+  - kind: ServiceAccount
+    name: alloy
+    namespace: monitoring

@@ -1,0 +1,104 @@
+# Traefik — HTTP/HTTPS edge proxy and IngressRoute controller.
+# Production: 2 replicas, anti-affinity required by hostname, exposed via
+# Hetzner Load Balancer nexora-ingress-production (lb21) provisioned by
+# Terraform; the Service type LoadBalancer triggers hcloud-ccm to attach
+# the matching LB on creation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: 33.2.1
+    helm:
+      values: |
+        deployment:
+          replicas: 2
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+                topologyKey: kubernetes.io/hostname
+        service:
+          type: LoadBalancer
+          annotations:
+            # Hetzner CCM picks the existing LB by name (created by
+            # Terraform in nexora-infra). load-balancer.hetzner.cloud/uses-proxyprotocol
+            # is enabled so Traefik gets real client IPs; the Hetzner LB
+            # has proxy-protocol turned on for the same Service.
+            load-balancer.hetzner.cloud/name: nexora-ingress-production
+            load-balancer.hetzner.cloud/use-private-ip: "true"
+            load-balancer.hetzner.cloud/uses-proxyprotocol: "true"
+            load-balancer.hetzner.cloud/disable-private-ingress: "false"
+        ports:
+          web:
+            port: 8000
+            exposedPort: 80
+            proxyProtocol:
+              trustedIPs:
+                - 10.60.0.0/16
+          websecure:
+            port: 8443
+            exposedPort: 443
+            tls:
+              enabled: true
+            proxyProtocol:
+              trustedIPs:
+                - 10.60.0.0/16
+        ingressRoute:
+          dashboard:
+            enabled: false   # exposed separately via IngressRoute with CF Access
+        providers:
+          kubernetesCRD:
+            enabled: true
+            allowCrossNamespace: true
+          kubernetesIngress:
+            enabled: true
+        # Middlewares listed in platform/traefik/middlewares.yaml:
+        #   - cloudflare-jwt-assertion (auth for vault/argocd/hubble UIs)
+        #   - rate-limit-global  (per-IP rate limit on public ingress)
+        #   - secure-headers     (HSTS, CSP, frame-deny, referrer-policy)
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        metrics:
+          prometheus:
+            service:
+              enabled: true
+              annotations:
+                prometheus.io/scrape: "true"
+                prometheus.io/port: "9100"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

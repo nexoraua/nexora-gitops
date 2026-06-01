@@ -1,0 +1,49 @@
+# Hetzner Cloud CSI driver — provides the `hcloud-volumes` StorageClass.
+# Used by Vault (Raft data) where we want a block volume that survives
+# pod re-creation independently of LINSTOR. The Talos module installs
+# hcloud CCM but not CSI; this fills that gap. Reuses the `hcloud`
+# Secret in kube-system that the CCM already uses.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hcloud-csi
+  namespace: argocd
+  annotations:
+    # Must run before any stateful workload that requests a PVC.
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: platform
+  source:
+    repoURL: https://charts.hetzner.cloud
+    chart: hcloud-csi
+    targetRevision: 2.13.0
+    helm:
+      values: |
+        controller:
+          replicaCount: 2
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+        node:
+          tolerations:
+            - operator: Exists
+              effect: NoSchedule
+        storageClasses:
+          - name: hcloud-volumes
+            defaultStorageClass: false
+            reclaimPolicy: Retain
+        # Reuse the hcloud secret the Talos module already provisioned
+        # for the cloud-controller-manager (kube-system/hcloud).
+        secret:
+          create: false
+          name: hcloud
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

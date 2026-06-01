@@ -1,0 +1,87 @@
+# PodDisruptionBudgets for the monitoring stack.
+# Selector keys come from upstream Helm chart conventions; verify with
+# `kubectl -n monitoring get pods --show-labels` after the first sync.
+#
+# Staging runs single replicas for vmstorage / vmselect / vminsert /
+# loki / tempo / grafana, so these PDBs are advisory only — with
+# replicas=1 the budget cannot allow any disruption without violating
+# itself, so we set minAvailable: 0 explicitly to keep voluntary
+# disruptions unblocked. The manifest stays in git as documentation of
+# the production posture (where replicas > 1 and minAvailable=1).
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vmstorage-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmstorage
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vmselect-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmselect
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vminsert-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vminsert
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: loki-pdb
+  namespace: monitoring
+spec:
+  # SingleBinary on staging; production splits read/write/backend paths
+  # and runs separate PDBs per component. The component label scopes
+  # this to the loki-0 StatefulSet — without it the PDB also catches
+  # the loki-canary DaemonSet + loki-gateway Deployment.
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/component: single-binary
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tempo-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: grafana-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+# No PDB for Alloy: it is a DaemonSet, and DaemonSets don't implement
+# the scale subresource — the PDB controller can't evaluate the budget
+# ("daemonsets.apps does not implement the scale subresource") and the
+# PDB sits permanently broken. DaemonSet pods follow node lifecycle:
+# a drain removes the pod, a node return re-creates it. No budget
+# needed or possible.

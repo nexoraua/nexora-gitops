@@ -1,0 +1,43 @@
+# Dragonfly cluster — production.
+# Redis-compatible cache + idempotency + refresh whitelist + rate-limit
+# buckets for Nexora.Api and Nexora.Admin. Three replicas with emulated
+# cluster mode for horizontal scale + leader-failover.
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: nexora-cache
+  namespace: dragonfly
+spec:
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.24.0
+  replicas: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+  args:
+    - --maxmemory=2gb
+    - --proactor_threads=4
+    - --snapshot_cron=0 */4 * * *
+    - --cluster_mode=emulated
+    - --dir=/data
+  snapshot:
+    cron: "0 */4 * * *"
+    persistentVolumeClaimSpec:
+      storageClassName: linstor-r1
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+  # The Dragonfly Operator honours podSpec under spec.affinity at the
+  # CRD level; podAntiAffinity here spreads the 3 cache replicas across
+  # 3 distinct nodes so a node loss only kills 1 of 3.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: nexora-cache
+              app.kubernetes.io/part-of: dragonfly
+          topologyKey: kubernetes.io/hostname

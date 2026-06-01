@@ -1,0 +1,32 @@
+# PodDisruptionBudgets for stateful workloads and the monitoring stack.
+# Manifests live in clusters/staging/platform/pdbs/.
+#
+# Staging runs all of these as single replicas (sandbox sizing), so the
+# PDBs are advisory only — minAvailable: 0 / maxUnavailable: 1 leaves
+# voluntary disruptions unblocked, but the manifest stays in git as
+# documentation of the production posture (where replicas > 1 and the
+# budget actually gates drains).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pdbs
+  namespace: argocd
+  annotations:
+    # Sync after operators install their CRDs / workloads (wave 1) so the
+    # PDB selectors match Pods that already exist.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/staging/platform/pdbs
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

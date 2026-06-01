@@ -1,0 +1,114 @@
+# Business PostgreSQL 18 cluster for staging.
+# Schemas per bounded context — identity, wallet, investments, contracts,
+# notifications, fop, audit, quartz (Quartz.NET state).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-business-staging
+  namespace: postgresql
+spec:
+  instances: 1   # staging has one nodepool=database node (CPX31); prod uses 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-superuser
+  # Grafana Alloy scrapes by prometheus.io/scrape annotation (vmagent is
+  # disabled cluster-wide), so the instance pods must carry it. CNPG
+  # propagates inheritedMetadata to every managed resource, pods
+  # included. Port 9187 is the CNPG metrics exporter.
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  storage:
+    storageClass: linstor-r1
+    size: 10Gi
+  walStorage:
+    storageClass: linstor-r1
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  postgresql:
+    parameters:
+      max_connections: "150"
+      shared_buffers: "128MB"
+      effective_cache_size: "384MB"
+      work_mem: "8MB"
+      wal_level: "logical"          # for future CDC to ClickHouse
+      pg_stat_statements.track: "all"
+    pg_hba:
+      # Per-role least-privilege: the app role can only reach its own
+      # business database from the cluster CNI range. No bare `all all`
+      # rule — that previously let any role authenticate to any database.
+      # CNPG auto-appends a `host replication streaming_replica ...` entry
+      # for managed replication; do not duplicate it here.
+      - host nexora nexora_app 10.50.0.0/16 scram-sha-256
+    shared_preload_libraries:
+      - pg_stat_statements
+      - pgaudit
+  monitoring:
+    # PodMonitor disabled: nothing consumes it (vmagent is off, Alloy
+    # scrapes via the prometheus.io/scrape annotation set above).
+    enablePodMonitor: false
+  # Continuous backup: WAL archiving + scheduled base backups to Hetzner
+  # Object Storage (FSN1), bucket nexora-cnpg-backups-staging. WAL
+  # archiving gives PITR; the ScheduledBackup below takes a daily base.
+  # Retention is 7 days on staging (vs 30d on develop / production) — a
+  # sandbox window large enough to validate restore drills.
+  #
+  # See clusters/develop/stateful/postgresql/cnpg-cluster.yaml for the
+  # PRODUCTION immutability design notes (cross-provider AWS S3 with
+  # SSE-KMS + Object Lock COMPLIANCE mode).
+  backup:
+    retentionPolicy: "7d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-staging/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      # NOTE: Hetzner Object Storage rejects the SSE header (AES256) with
+      # InvalidArgument, so barmanObjectStore-level `encryption:` cannot
+      # be set here. Backup data therefore relies on Hetzner Object
+      # Storage's own at-rest encryption on staging.
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+---
+# Daily base backup at 03:30 (staggered ahead of the authentik cluster's
+# 04:30 to avoid concurrent S3 PUT bursts against Hetzner Object Storage
+# from a single small staging cluster); combined with continuous WAL
+# archiving this gives point-in-time recovery within the 7-day window.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: nexora-business-staging-daily
+  namespace: postgresql
+spec:
+  schedule: "0 30 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: nexora-business-staging
+  method: barmanObjectStore

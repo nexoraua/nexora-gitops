@@ -1,0 +1,80 @@
+# LinstorCluster — declares the LINSTOR controller + CSI deployments
+# AND the satellite DaemonSet template via top-level nodeSelector /
+# tolerations.
+#
+# Production differs from develop in:
+#   - control + csiController pinned to system pool (2 nodes, anti-affinity)
+#   - tolerates control-plane / system / database taints so satellites
+#     can land on stateful-1/2/3 + system-1/2 + worker-1/2 (control-plane
+#     keeps its taint; LinstorCluster doesn't tolerate it, so no satellite
+#     on control-plane — etcd nodes never act as storage)
+#   - 3-way replication via linstor-r3 StorageClass (defined in
+#     storageclass.yaml) consumed by CNPG business + authentik
+apiVersion: piraeus.io/v1
+kind: LinstorCluster
+metadata:
+  name: linstorcluster
+spec:
+  # Schedule satellites on every linux node except control-plane — the
+  # per-pool LinstorSatelliteConfigurations decide which storage pool
+  # each satellite gets.
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - key: nodepool
+      operator: Equal
+      value: system
+      effect: NoSchedule
+    - key: nodepool
+      operator: Equal
+      value: database
+      effect: NoSchedule
+  # Pin the LINSTOR controller to the system nodepool.
+  controller:
+    podTemplate:
+      spec:
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: linstor-controller
+                topologyKey: kubernetes.io/hostname
+  csiController:
+    podTemplate:
+      spec:
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: linstor-csi-controller
+                topologyKey: kubernetes.io/hostname
+  # CSI node-plugin DaemonSet runs on every worker that may host a
+  # PVC consumer (system, workers, database).
+  csiNode:
+    podTemplate:
+      spec:
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+          - key: nodepool
+            operator: Equal
+            value: database
+            effect: NoSchedule

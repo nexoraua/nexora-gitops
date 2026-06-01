@@ -1,0 +1,58 @@
+# Per-nodepool LinstorSatelliteConfiguration — defines storage pools
+# AND tolerations.  Both fields are needed at the per-pool level
+# because Piraeus uses tolerations from the matching configurations
+# (not just the cluster-wide one) to decide whether the satellite
+# DaemonSet can schedule on each node.
+---
+# workers (CPX21, ~80 GB ephemeral) — no taint, no toleration needed.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-workers
+spec:
+  nodeSelector:
+    nodepool: workers
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+# system pool (CPX21).
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-system
+spec:
+  nodeSelector:
+    nodepool: system
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+# stateful pool (CPX31, ~160 GB).
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-stateful
+spec:
+  nodeSelector:
+    nodepool: database
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: database
+          effect: NoSchedule
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore

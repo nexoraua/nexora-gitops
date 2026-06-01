@@ -1,0 +1,18 @@
+# PodDisruptionBudget for Vault.
+# Staging runs ha.raft.enabled=true but replicas=1 — a lone replica
+# cannot satisfy any non-zero budget, so this PDB is advisory only.
+# The manifest stays in git as documentation of the production posture
+# (3 raft replicas, maxUnavailable: 1).
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vault-pdb
+  namespace: vault-system
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      app.kubernetes.io/instance: vault
+      component: server

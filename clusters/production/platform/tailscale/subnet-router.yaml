@@ -1,0 +1,173 @@
+# HA Tailscale subnet router — production. Two independent Tailscale
+# nodes, each advertising 10.60.0.0/16 (Hetzner private network of the
+# production cluster) into the nxua tailnet. Tailscale's subnet-router
+# failover picks one as primary and fails over to the other on node loss
+# or rolling update.
+#
+# StatefulSet, not Deployment: each replica is a SEPARATE tailnet node
+# and MUST keep its own state. The stable pod name derives TS_KUBE_SECRET
+# so each pod stores state in its own Secret — two pods sharing a state
+# Secret would corrupt each other.
+#
+# Scheduling: nodeAffinity restricts to system + workers (the system
+# pool has 2 nodes, workers 2 nodes; required pod anti-affinity by
+# hostname satisfies cleanly).
+#
+# Auth key requirements (https://login.tailscale.com/admin/settings/keys):
+#   - Reusable: yes
+#   - Ephemeral: no
+#   - Pre-authorized: yes
+#   - Tags: tag:k8s, tag:nexora-production
+# Seed into Vault:
+#   vault kv put kv/nexora/production/tailscale auth-key="tskey-auth-..."
+# ESO materialises Secret tailscale-auth (platform/secrets/tailscale.yaml).
+#
+# ROUTE APPROVAL: the second router advertises the same 10.60.0.0/16.
+# The tailnet ACL must autoApprove that route for tag:nexora-production
+# (autoApprovers -> routes), otherwise the new node's route needs
+# manual approval in the Tailscale admin console before failover works.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+spec:
+  clusterIP: None
+  selector:
+    app: tailscale-subnet-router
+  ports:
+    - name: placeholder
+      port: 9999
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+  labels:
+    app: tailscale-subnet-router
+spec:
+  replicas: 2
+  serviceName: tailscale-subnet-router
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: tailscale-subnet-router
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: tailscale-subnet-router
+    spec:
+      serviceAccountName: tailscale-subnet-router
+      affinity:
+        # Production: eligible nodes are the 2 system + 2 workers nodes.
+        # Database + control-plane are excluded — keeps the L3 router off
+        # the data tier and off etcd.
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nodepool
+                    operator: In
+                    values: [system, workers]
+        # The two replicas MUST land on different nodes so a single node
+        # loss never takes out both routers.
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: tailscale-subnet-router
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+      hostNetwork: false
+      containers:
+        - name: tailscale
+          image: tailscale/tailscale:v1.96.5
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TS_KUBE_SECRET
+              value: "$(POD_NAME)-state"
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth
+                  key: auth-key
+            - name: TS_ROUTES
+              value: "10.60.0.0/16"
+            - name: TS_HOSTNAME
+              value: "$(POD_NAME)"
+            - name: TS_EXTRA_ARGS
+              value: "--advertise-tags=tag:k8s,tag:nexora-production --accept-dns=false"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - tailscale-subnet-router-0-state
+      - tailscale-subnet-router-1-state
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tailscale-subnet-router
+subjects:
+  - kind: ServiceAccount
+    name: tailscale-subnet-router
+    namespace: tailscale
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tailscale-subnet-router
+  namespace: tailscale
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: tailscale-subnet-router
