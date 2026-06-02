@@ -151,6 +151,13 @@ spec:
           enabled: true
           spec:
             replicaCount: 1
+            # Chart 0.30.0 still ships alertmanager v0.27, which does not
+            # know `telegram_configs.message_thread_id` (supergroup forum
+            # topic targeting — added upstream in v0.28). Pin v0.28.1 so
+            # alerts can land in a dedicated topic instead of the group
+            # root chat.
+            image:
+              tag: v0.28.1
             # Routes are loaded from the alertmanager-config Secret
             # materialised by ESO from kv/nexora/develop/alerts/telegram
             # — see platform/secrets/alertmanager-config.yaml.

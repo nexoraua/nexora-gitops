@@ -154,6 +154,11 @@ spec:
           enabled: true
           spec:
             replicaCount: 1
+            # Chart 0.30.0 still ships alertmanager v0.27, which does not
+            # know `telegram_configs.message_thread_id` (forum topic
+            # targeting — added upstream in v0.28). Pin v0.28.1.
+            image:
+              tag: v0.28.1
             # Routes are loaded from the alertmanager-config Secret
             # materialised by ESO from kv/nexora/staging/alerts/telegram
             # — see platform/secrets/alertmanager-config.yaml.

@@ -198,6 +198,11 @@ spec:
           enabled: true
           spec:
             replicaCount: 2
+            # Chart 0.30.0 still ships alertmanager v0.27, which does not
+            # know `telegram_configs.message_thread_id` (forum topic
+            # targeting — added upstream in v0.28). Pin v0.28.1.
+            image:
+              tag: v0.28.1
             podDisruptionBudget:
               maxUnavailable: 1
             affinity:
