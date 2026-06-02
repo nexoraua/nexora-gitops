@@ -157,7 +157,25 @@ vault kv put kv/nexora/develop/grafana/admin \
 
 Materialize: `grafana-admin` (monitoring ns).
 
-### 12. GitHub image pull token (опційно, якщо private registry)
+### 12. Alertmanager Telegram destination
+
+Develop alерти йдуть в одного Telegram-бота, у супергрупу "NEXORA
+development", у виділений топік. Тут бот, група і топік мають бути
+створені вручну до seed-у (BotFather, додати бота адміном у групу,
+скопіювати `chat.id` і `message_thread_id`).
+
+```bash
+vault kv put kv/nexora/develop/alerts/telegram \
+  bot_token="<BotFather-token>" \
+  chat_id="-1003724666926" \
+  topic_id="40"
+```
+
+Materialize: `alertmanager-config` (monitoring ns) — рендерить повну
+`alertmanager.yaml` і підмонтовується у VMAlertmanager через
+`configSecret: alertmanager-config`.
+
+### 13. GitHub image pull token (опційно, якщо private registry)
 
 ```bash
 docker_config=$(echo -n '{"auths":{"ghcr.io":{"username":"nexora-ci","password":"'$GH_PAT'","auth":"'$(echo -n nexora-ci:$GH_PAT | base64)'"}}}' | base64 -w 0)
@@ -183,5 +201,6 @@ image (на старті Nexora образи публічні / Hetzner registry
 - [ ] `kv/nexora/develop/grafana/admin` записаний.
 - [ ] `kv/nexora/develop/vault-oidc` (тільки після того, як Authentik
       blueprint згенерував provider).
+- [ ] `kv/nexora/develop/alerts/telegram` записаний.
 - [ ] Hetzner Object Storage buckets `nexora-develop-cnpg-backups`,
       `nexora-develop-loki`, `nexora-develop-tempo` створено.
