@@ -144,7 +144,10 @@ spec:
               url: "http://vmselect-vm.monitoring.svc:8481/select/0/prometheus/"
             notifier:
               url: "http://vmalertmanager-vm.monitoring.svc:9093/"
-        vmalertmanager:
+        # Chart 0.30.0 dropped the `vm` prefix — the chart reads
+        # .Values.alertmanager (the values key), but still renders a
+        # VMAlertmanager CRD with the resulting spec.
+        alertmanager:
           enabled: true
           spec:
             replicaCount: 1
