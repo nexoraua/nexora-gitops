@@ -152,9 +152,12 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create"]
+  # Tailscale emits boot/health events; needs create + patch only. `get`
+  # was previously granted but never used in 16 days of runtime — drop
+  # it to keep the Role aligned with what the workload actually exercises.
   - apiGroups: [""]
     resources: ["events"]
-    verbs: ["create", "patch", "get"]
+    verbs: ["create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
