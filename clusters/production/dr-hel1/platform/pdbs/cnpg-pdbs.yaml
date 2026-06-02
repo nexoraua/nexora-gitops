@@ -1,0 +1,25 @@
+# PodDisruptionBudgets for CNPG clusters — HEL1 DR cold standby.
+# Selectors retargeted to the regional cluster names so the PDB matches
+# the right CNPG instances on this region's data plane.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-business-pdb
+  namespace: postgresql
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-business-production-hel1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-authentik-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-authentik-production-hel1

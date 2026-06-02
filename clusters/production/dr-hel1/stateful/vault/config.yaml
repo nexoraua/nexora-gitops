@@ -1,0 +1,26 @@
+# Vault platform-config Application — HEL1 DR cold standby.
+# Wraps clusters/production/dr-hel1/platform/vault/ (ClusterSecretStore +
+# ingress + _pending-authentik-oidc/). Sync wave 4 — after Authentik is
+# up so the OIDC bootstrap Job can read regional Authentik credentials.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-config-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-hel1/platform/vault
+  destination:
+    name: production-hel1
+    namespace: vault-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

@@ -1,0 +1,50 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# RabbitMQ cluster — NBG1 cold standby. replicas: 0 in scaffold; flip to
+# 3 on activation. RabbitMQ state (DLQ + retry queues) is non-authoritative
+# in this stack: there is no cross-region federation. On activation the
+# regional cluster is recreated empty and producers reconnect against
+# rabbitmq-nbg1.nxua.dev.
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: nexora-rabbitmq
+  namespace: rabbitmq
+spec:
+  replicas: 0   # COLD: flip to 3 on activation
+  image: rabbitmq:4.0-management
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  persistence:
+    storageClassName: linstor-r1
+    storage: 20Gi
+  rabbitmq:
+    additionalConfig: |
+      cluster_partition_handling = pause_minority
+      collect_statistics_interval = 10000
+      default_queue_type = quorum
+      cluster_formation.peer_discovery_backend = k8s
+  override:
+    statefulSet:
+      spec:
+        template:
+          metadata:
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "15692"
+          spec:
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: nexora-rabbitmq
+                    topologyKey: kubernetes.io/hostname
+            containers: []
+  secretBackend:
+    externalSecret:
+      name: rabbitmq-credentials

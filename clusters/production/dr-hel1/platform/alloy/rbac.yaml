@@ -1,0 +1,62 @@
+# Alloy supplementary RBAC — HEL1 DR cold standby. Verbatim copy.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-node-metrics
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/metrics
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-node-metrics-daemonset
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-node-metrics
+subjects:
+  - kind: ServiceAccount
+    name: alloy-daemonset
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-node-metrics-otlp-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-node-metrics
+subjects:
+  - kind: ServiceAccount
+    name: alloy-otlp-gateway
+    namespace: monitoring
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-gateway
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/component: otlp-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/instance: alloy-otlp-gateway
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP

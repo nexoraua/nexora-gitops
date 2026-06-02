@@ -1,0 +1,90 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# DR-specific replication-lag alerts for the NBG1 sync-replica region.
+#
+# This file EXTENDS the FSN1 dr-sync-alerts.yaml — it does NOT duplicate
+# the rclone CronJob alerts (CNPGDRSyncBusinessFailed /
+# CNPGDRSyncAuthentikFailed / CNPGDRSyncBusinessStale). Those only fire
+# in the region that owns the AWS S3 immutable copy (FSN1 at day-1).
+# Duplicating them here would double-page on a single failure and would
+# also race on the global AWS Object Lock retention extension.
+#
+# What this file adds vs FSN1:
+#   - group cnpg-dr-replica-lag (region-tagged) with NBG1-specific
+#     replication-lag alerts against the FSN1 primary.
+#
+# Severity / label shape is identical to FSN1 (component, severity,
+# region added) so on-call routing rules match without per-region
+# overrides.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: cnpg-dr-sync-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: nexora
+    nexora.io/component: cnpg-dr
+    nexora.io/region: nbg1
+spec:
+  groups:
+    - name: cnpg-dr-replica-lag
+      rules:
+        # Streaming replication lag from FSN1 -> NBG1 over 5 minutes is a
+        # high-severity signal: the sync standby has fallen behind enough
+        # that a failover would lose data.
+        - alert: CNPGReplicaLagBusinessHigh
+          expr: |
+            max by (cluster)(
+              cnpg_pg_replication_lag{cluster="nexora-business-production-nbg1"}
+            ) > 300
+          for: 10m
+          labels:
+            severity: critical
+            component: cnpg-dr
+            region: nbg1
+            cluster: nexora-business-production-nbg1
+          annotations:
+            summary: "NBG1 business replica streaming lag > 5 min"
+            description: >-
+              The NBG1 CNPG replica is more than 5 minutes behind the FSN1
+              primary. Verify network reachability through Tailscale
+              (10.60.0.0/16 should be advertised in tag:nexora-production-nbg1
+              ACLs) and check the cnpg-controller-manager logs.
+
+        - alert: CNPGReplicaLagAuthentikHigh
+          expr: |
+            max by (cluster)(
+              cnpg_pg_replication_lag{cluster="nexora-authentik-production-nbg1"}
+            ) > 300
+          for: 10m
+          labels:
+            severity: critical
+            component: cnpg-dr
+            region: nbg1
+            cluster: nexora-authentik-production-nbg1
+          annotations:
+            summary: "NBG1 authentik replica streaming lag > 5 min"
+            description: >-
+              The NBG1 Authentik CNPG replica is more than 5 minutes
+              behind the FSN1 primary. Identity state divergence on
+              failover is possible.
+
+        # Replica disconnected from primary entirely.
+        - alert: CNPGReplicaNotStreaming
+          expr: |
+            cnpg_pg_replication_in_recovery{cluster=~"nexora-(business|authentik)-production-nbg1"} == 1
+            and on (cluster) (
+              cnpg_pg_replication_lag{cluster=~"nexora-(business|authentik)-production-nbg1"} == 0
+            )
+          for: 15m
+          labels:
+            severity: warning
+            component: cnpg-dr
+            region: nbg1
+          annotations:
+            summary: "NBG1 CNPG replica {{ $labels.cluster }} reports zero lag while in recovery"
+            description: >-
+              The NBG1 replica is in recovery mode but the WAL replay
+              position has not advanced. The tailnet route to the FSN1
+              primary may be down — check dr-tailscale-router and the
+              FSN1 subnet router peer status.

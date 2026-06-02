@@ -1,3 +1,5 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
 # Passive Traefik edge for NBG1 cold standby.
 # replicas: 0 — does nothing until DR flip.
 apiVersion: apps/v1

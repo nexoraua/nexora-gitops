@@ -1,0 +1,11 @@
+# Dragonfly PDB — HEL1 DR cold standby. Verbatim copy.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dragonfly-pdb
+  namespace: dragonfly
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dragonfly

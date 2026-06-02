@@ -1,0 +1,25 @@
+# Authentik PDBs — HEL1 DR cold standby. Verbatim copy.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authentik-server-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+      app.kubernetes.io/component: server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authentik-worker-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+      app.kubernetes.io/component: worker

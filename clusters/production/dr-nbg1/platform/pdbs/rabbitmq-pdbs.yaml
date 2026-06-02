@@ -1,0 +1,14 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# RabbitMQ PDB — verbatim copy of FSN1. 3 brokers, maxUnavailable=1.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq-pdb
+  namespace: rabbitmq
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexora-rabbitmq
+      app.kubernetes.io/component: rabbitmq

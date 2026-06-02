@@ -1,0 +1,27 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Authentik PDBs — verbatim copy of FSN1.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authentik-server-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+      app.kubernetes.io/component: server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authentik-worker-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+      app.kubernetes.io/component: worker

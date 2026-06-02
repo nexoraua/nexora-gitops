@@ -1,5 +1,11 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
 # Tailscale subnet router for the NBG1 cold standby cluster.
-# replicas: 0 — activated on DR flip. Advertises 10.62.0.0/16.
+# replicas: 0 — activated on DR flip. Advertises 10.61.0.0/16 (NBG1's
+# OWN Hetzner private network CIDR). FSN1 stays responsible for
+# 10.60.0.0/16. The two routers form a single tailnet mesh; each
+# region advertises only the subnet it owns so the nxua tailnet sees
+# both regional CIDRs as distinct routed prefixes.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -76,7 +82,7 @@ spec:
                   name: tailscale-auth
                   key: auth-key
             - name: TS_ROUTES
-              value: "10.62.0.0/16"
+              value: "10.61.0.0/16"
             - name: TS_HOSTNAME
               value: "$(POD_NAME)"
             - name: TS_EXTRA_ARGS

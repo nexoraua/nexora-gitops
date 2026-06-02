@@ -1,3 +1,4 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-hel1/README.md.
 # Passive Traefik edge for HEL1 cold standby.
 # replicas: 0 — does nothing until DR flip.
 #

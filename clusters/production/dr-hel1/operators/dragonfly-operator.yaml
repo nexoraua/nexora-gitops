@@ -1,0 +1,29 @@
+# Dragonfly Operator — HEL1 DR cold standby.
+# Mirrors clusters/production/apps/dragonfly-operator.yaml. Required
+# before stateful/dragonfly/dragonfly.yaml in this region.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dragonfly-operator-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/dragonflydb/dragonfly-operator.git
+    targetRevision: v1.1.11
+    path: manifests
+  destination:
+    name: production-hel1
+    namespace: dragonfly-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

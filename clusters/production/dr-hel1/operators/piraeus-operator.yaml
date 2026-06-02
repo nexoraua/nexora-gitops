@@ -1,0 +1,30 @@
+# Piraeus Operator — HEL1 DR cold standby.
+# LINSTOR-based CSI; required before any StorageClass referenced by
+# stateful workloads (CNPG replica, Vault data, Dragonfly, RabbitMQ).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: piraeus-operator-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/piraeusdatastore/piraeus-operator.git
+    targetRevision: v2.10.7
+    path: config/default
+  destination:
+    name: production-hel1
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated:
+      prune: false   # never auto-prune storage operator
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true

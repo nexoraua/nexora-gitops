@@ -1,5 +1,15 @@
 # ArgoCD AppProjects — namespace/source isolation for production cluster.
 # Root app stays in 'default' project (manages Application CRDs in argocd ns).
+#
+# DR destinations (production-nbg1, production-hel1) are listed alongside
+# the FSN1 in-cluster destination. They are by-name references; until the
+# corresponding cluster Secret labelled argocd.argoproj.io/secret-type=cluster
+# is created in the central FSN1 argocd ns (Phase 3 of the DR activation
+# runbook), Argo CD refuses to sync Applications that target them — adding
+# them here does NOT cause any reconciliation at day-1. Per-region nested
+# Applications under clusters/production/dr-{nbg1,hel1}/ reference these
+# project names (platform / data / apps / observability), so each project
+# must allow both DR cluster destinations or the activation diff fails.
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
@@ -25,6 +35,11 @@ spec:
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'
+    # DR clusters (by name) — see DR activation runbooks.
+    - name: production-nbg1
+      namespace: '*'
+    - name: production-hel1
+      namespace: '*'
   clusterResourceWhitelist:
     - group: '*'
       kind: '*'
@@ -49,6 +64,23 @@ spec:
     - server: https://kubernetes.default.svc
       namespace: dragonfly
     - server: https://kubernetes.default.svc
+      namespace: authentik
+    # DR clusters (by name) — same stateful namespaces.
+    - name: production-nbg1
+      namespace: postgresql
+    - name: production-nbg1
+      namespace: rabbitmq
+    - name: production-nbg1
+      namespace: dragonfly
+    - name: production-nbg1
+      namespace: authentik
+    - name: production-hel1
+      namespace: postgresql
+    - name: production-hel1
+      namespace: rabbitmq
+    - name: production-hel1
+      namespace: dragonfly
+    - name: production-hel1
       namespace: authentik
   clusterResourceWhitelist:
     - group: ''
@@ -85,6 +117,15 @@ spec:
     - server: https://kubernetes.default.svc
       namespace: monitoring
     - server: https://kubernetes.default.svc
+      namespace: kube-system
+    # DR clusters (by name) — same observability namespaces.
+    - name: production-nbg1
+      namespace: monitoring
+    - name: production-nbg1
+      namespace: kube-system
+    - name: production-hel1
+      namespace: monitoring
+    - name: production-hel1
       namespace: kube-system
   clusterResourceWhitelist:
     - group: ''
@@ -127,6 +168,27 @@ spec:
     # Access JWT assertion) that lives in the traefik ns, and a cluster-
     # scoped ClusterSecretStore for ESO->Vault.
     - server: https://kubernetes.default.svc
+      namespace: traefik
+    # DR clusters (by name) — same apps namespaces.
+    - name: production-nbg1
+      namespace: authentik
+    - name: production-nbg1
+      namespace: vault-system
+    - name: production-nbg1
+      namespace: nexora-api
+    - name: production-nbg1
+      namespace: nexora-admin
+    - name: production-nbg1
+      namespace: traefik
+    - name: production-hel1
+      namespace: authentik
+    - name: production-hel1
+      namespace: vault-system
+    - name: production-hel1
+      namespace: nexora-api
+    - name: production-hel1
+      namespace: nexora-admin
+    - name: production-hel1
       namespace: traefik
   clusterResourceWhitelist:
     - group: ''

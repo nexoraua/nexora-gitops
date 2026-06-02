@@ -1,7 +1,8 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-hel1/README.md.
 # Tailscale subnet router for the HEL1 cold standby cluster.
 # replicas: 0 by default — activated on DR flip.
 #
-# Advertises the HEL1 cluster CIDR (10.61.0.0/16) into the nxua tailnet
+# Advertises the HEL1 cluster CIDR (10.62.0.0/16) into the nxua tailnet
 # so the FSN1 primary CNPG cluster can reach the HEL1 streaming-replica
 # Service over the tailnet without going through the public internet.
 apiVersion: v1
@@ -80,7 +81,7 @@ spec:
                   name: tailscale-auth
                   key: auth-key
             - name: TS_ROUTES
-              value: "10.61.0.0/16"
+              value: "10.62.0.0/16"
             - name: TS_HOSTNAME
               value: "$(POD_NAME)"
             - name: TS_EXTRA_ARGS

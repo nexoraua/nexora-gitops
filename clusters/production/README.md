@@ -29,8 +29,12 @@ them.
 
 ```text
 clusters/production/
-  root.yaml                            # ArgoCD app-of-apps root
-  apps/                                # one Application per workload
+  root.yaml                            # ArgoCD app-of-apps root (recurse: false, apps/ only)
+  apps/                                # one Application per workload (FSN1, day-1)
+  apps-dr/                             # DR activation Applications — NOT reconciled by root.yaml
+    dr-nbg1.yaml                       #   wires dr-nbg1/ to destination=production-nbg1 (manual apply)
+    dr-hel1.yaml                       #   wires dr-hel1/ to destination=production-hel1 (manual apply)
+    README.md                          #   explains the apps/ vs apps-dr/ split
   platform/
     argocd/                            # AppProjects (platform, data, observability, apps)
     linstor/                           # LinstorCluster + satellites + r1/r3 StorageClasses
@@ -51,8 +55,14 @@ clusters/production/
                                        # + cross-cloud DR sync CronJob
     rabbitmq/                          # 3-broker quorum-queue cluster (linstor-r1)
     dragonfly/                         # 3-replica emulated-cluster cache (linstor-r1)
-  dr-nbg1/                             # COLD SCAFFOLDING — no Application targets it
-  dr-hel1/                             # COLD SCAFFOLDING — no Application targets it
+  dr-nbg1/                             # COLD SCAFFOLDING — sync-replica region (Nuremberg)
+    dr-activation-runbook.md           #   full step-by-step activation procedure
+    README.md                          #   folder layout + region addressing
+    (operators/, platform/, stateful/, observability/, auth/, apps/) — sized at replicas=0
+  dr-hel1/                             # COLD SCAFFOLDING — async-replica region (Helsinki)
+    dr-activation-runbook.md           #   full step-by-step activation procedure
+    README.md                          #   folder layout + region addressing
+    (operators/, platform/, stateful/, observability/, auth/, apps/) — sized at replicas=0
 ```
 
 ## Immutable backup DR (ADR-I-0005)
@@ -78,23 +88,51 @@ Manifests: `stateful/postgresql/cnpg-dr-sync.yaml`,
 
 DR manifests under `dr-nbg1/` and `dr-hel1/` are sized as cold standby:
 
-- CNPG streaming-replica `Cluster` with `instances: 0`
-- Tailscale subnet router StatefulSet with `replicas: 0`
-- Passive Traefik Deployment + ClusterIP Service with `replicas: 0`
+- every CNPG streaming-replica `Cluster` with `instances: 0`
+- every Tailscale subnet router StatefulSet with `replicas: 0`
+- every passive Traefik Deployment + LoadBalancer Service with `replicas: 0`
+- every Authentik, Vault HA, RabbitMQ, Dragonfly workload with `replicas: 0`
 
-No `clusters/production/apps/dr-{nbg1,hel1}.yaml` exists, so Argo CD
-does not reconcile these directories at day-1. Activation requires:
+The pre-staged Argo CD `Application` manifests live under
+`clusters/production/apps-dr/` (NOT `apps/`) so the root app-of-apps
+(`root.yaml`, `directory.recurse: false`, scoped to `apps/`) cannot
+pick them up by accident. The **commit of the manifest is NOT the
+activation flag** — the manual `kubectl apply -n argocd -f
+clusters/production/apps-dr/dr-<region>.yaml` is.
 
-1. New Terraform workspace under `nexora-infra/environments/` to
-   provision the target region's Talos cluster + Object Storage buckets.
-2. Add the corresponding `apps/dr-<region>.yaml` Application that
-   targets the new cluster (registered in Argo CD as a secondary
-   destination).
-3. Flip the `replicas` fields in this folder from `0` to the production
-   value.
+Activation requires (summary):
 
-See `dr-hel1/README.md` and `dr-nbg1/README.md` for the full
-activation runbook and ADR-I-0003 triggers.
+1. New Terraform workspace under
+   `nexora-infra/environments/production-<region>/` to provision the
+   target region's Talos cluster, LB, Hetzner Object Storage buckets,
+   and Tailscale subnet router auth key.
+2. Seed `kv/nexora/production-<region>/*` Vault paths (one per
+   ExternalSecret in `dr-<region>/platform/secrets/`).
+3. Register the new cluster as an Argo CD destination named
+   `production-<region>` (`argocd cluster add ... --name
+   production-<region>`).
+4. `kubectl apply -n argocd -f
+   clusters/production/apps-dr/dr-<region>.yaml` (the Application
+   ships **without** `syncPolicy.automated` — first sync is a manual
+   click in the Argo CD UI).
+5. Open a follow-up PR flipping `instances: 0`/`replicas: 0` to
+   production sizing. The PR is the audit trail for "DR region went
+   hot".
+6. Cloudflare DNS repoint to the new LB
+   `nexora-ingress-production-<region>` and CNPG promotion.
+
+The full step-by-step procedure (with phase-by-phase checklists,
+rollback steps, and smoke tests) lives in:
+
+- `dr-nbg1/dr-activation-runbook.md` — Hetzner NBG1 (sync-replica,
+  primary DR candidate)
+- `dr-hel1/dr-activation-runbook.md` — Hetzner HEL1 (async-replica,
+  geographically distant secondary)
+- `apps-dr/README.md` — why the activation Applications live in a
+  separate directory from `apps/`
+
+See `dr-{nbg1,hel1}/README.md` for region addressing (CIDRs, hostnames,
+bucket names) and ADR-I-0003 for the activation triggers.
 
 ## Bootstrap order
 

@@ -1,0 +1,85 @@
+# CNPG streaming-replica bootstrap for the Authentik state DB — HEL1
+# DR cold standby. instances=0 by default; activation flips to 3.
+#
+# HEL1 is the geographically-distant async secondary (RPO <= 5 min).
+# replica.enabled=true + asynchronous streaming from the FSN1 primary
+# nexora-authentik-production via its tailnet RW hostname. After failover
+# (set replica.enabled=false), this becomes the regional authoritative
+# identity database; bucket nexora-cnpg-backups-authentik-production-hel1
+# starts receiving its OWN base backups + WAL archive at that point.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-authentik-production-hel1
+  namespace: authentik
+spec:
+  instances: 0   # COLD: flip to 3 on activation
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-authentik-superuser
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  storage:
+    storageClass: linstor-r3
+    size: 20Gi
+  walStorage:
+    storageClass: linstor-r3
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  bootstrap:
+    pg_basebackup:
+      source: nexora-authentik-production
+  # Async replica (HEL1 is the geographically-distant secondary). On
+  # promotion (replica.enabled=false), this cluster becomes the
+  # authoritative identity DB for the region.
+  replica:
+    enabled: true
+    source: nexora-authentik-production
+  externalClusters:
+    - name: nexora-authentik-production
+      connectionParameters:
+        host: nexora-authentik-production-rw.fsn1.tailnet.nxua.ts.net
+        user: streaming_replica
+        sslmode: require
+      password:
+        name: cnpg-replication
+        key: password
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  monitoring:
+    enablePodMonitor: false
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-authentik-production-hel1/"
+      endpointURL: "https://hel1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2

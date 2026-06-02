@@ -1,0 +1,28 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Grafana dashboards bundled as ConfigMaps. Sidecar auto-loads any
+# ConfigMap labeled grafana_dashboard=1. The JSON payloads continue to
+# live under clusters/develop/platform/grafana-dashboards/ to avoid
+# drift (datasources are intra-cluster Services, environment-agnostic).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/grafana-dashboards
+  destination:
+    name: production-nbg1
+    namespace: monitoring
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

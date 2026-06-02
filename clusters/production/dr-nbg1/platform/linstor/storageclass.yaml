@@ -1,0 +1,35 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Production StorageClasses — verbatim from FSN1. linstor-r1 (single
+# replica, default) + linstor-r3 (3-way DRBD, replicasOnSame=nodepool=database).
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-r1
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: linstor.csi.linbit.com
+parameters:
+  linstor.csi.linbit.com/storagePool: pool0
+  linstor.csi.linbit.com/autoPlace: "1"
+  linstor.csi.linbit.com/resourceGroup: linstor-r1
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-r3
+provisioner: linstor.csi.linbit.com
+parameters:
+  linstor.csi.linbit.com/storagePool: pool0
+  linstor.csi.linbit.com/autoPlace: "3"
+  linstor.csi.linbit.com/replicasOnSame: "nodepool=database"
+  linstor.csi.linbit.com/resourceGroup: linstor-r3
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

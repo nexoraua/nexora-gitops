@@ -1,0 +1,81 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Grafana Alloy — DR copy. ApplicationSet shape mirrors FSN1: one DaemonSet
+# release + one StatefulSet OTLP gateway release. ConfigMap source points
+# at the regional alloy ConfigMap that targets local VMI/Loki/Tempo
+# Services and labels metrics with cluster=production-nbg1.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: alloy-nbg1
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          # COLD: flip daemonset replicas to "1" on activation.
+          - role: daemonset
+            controller: daemonset
+            replicas: "0"
+            syncWave: "1"
+          # COLD: flip otlp-gateway replicas to "2" on activation.
+          - role: otlp-gateway
+            controller: statefulset
+            replicas: "0"
+            syncWave: "1"
+  template:
+    metadata:
+      name: 'alloy-nbg1-{{role}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+    spec:
+      project: observability
+      sources:
+        - repoURL: https://grafana.github.io/helm-charts
+          chart: alloy
+          targetRevision: 0.9.2
+          helm:
+            releaseName: 'alloy-{{role}}'
+            values: |
+              controller:
+                type: {{controller}}
+                replicas: {{replicas}}
+                tolerations:
+                  - operator: Exists
+              alloy:
+                mounts:
+                  varlog: true
+                  dockercontainers: true
+                configMap:
+                  create: false
+                  name: alloy-config
+                extraPorts:
+                  - name: otlp-grpc
+                    port: 4317
+                    targetPort: 4317
+                    protocol: TCP
+                  - name: otlp-http
+                    port: 4318
+                    targetPort: 4318
+                    protocol: TCP
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    memory: 1Gi
+              crds:
+                create: false
+        - repoURL: https://github.com/nexoraua/nexora-gitops.git
+          targetRevision: main
+          path: clusters/production/dr-nbg1/platform/alloy
+      destination:
+        name: production-nbg1
+        namespace: monitoring
+      # syncPolicy.automated omitted intentionally — parent dr-nbg1
+      # Application is manual-sync; child ApplicationSet templates must
+      # inherit that gate so DR activation stays deliberate.
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

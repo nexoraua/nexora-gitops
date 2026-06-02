@@ -1,0 +1,67 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# LinstorCluster — DR copy. Identical to FSN1: controller + CSI controller
+# pinned to system pool, satellites on every linux node except
+# control-plane, 3-way replication on the stateful pool.
+apiVersion: piraeus.io/v1
+kind: LinstorCluster
+metadata:
+  name: linstorcluster
+spec:
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - key: nodepool
+      operator: Equal
+      value: system
+      effect: NoSchedule
+    - key: nodepool
+      operator: Equal
+      value: database
+      effect: NoSchedule
+  controller:
+    podTemplate:
+      spec:
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: linstor-controller
+                topologyKey: kubernetes.io/hostname
+  csiController:
+    podTemplate:
+      spec:
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: linstor-csi-controller
+                topologyKey: kubernetes.io/hostname
+  csiNode:
+    podTemplate:
+      spec:
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+          - key: nodepool
+            operator: Equal
+            value: database
+            effect: NoSchedule

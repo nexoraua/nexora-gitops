@@ -1,0 +1,91 @@
+# cert-manager — HEL1 DR cold standby.
+# Same chart pin + values as FSN1. Issuers in
+# platform/cert-manager/issuers.yaml reuse the same letsencrypt-prod
+# ClusterIssuer name; Cloudflare DNS-01 zone (nxua.dev) is unchanged.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.18.2
+      helm:
+        values: |
+          installCRDs: true
+          replicaCount: 0
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          nodeSelector:
+            nodepool: system
+          tolerations:
+            - key: nodepool
+              operator: Equal
+              value: system
+              effect: NoSchedule
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: cert-manager
+                  topologyKey: kubernetes.io/hostname
+          webhook:
+            replicaCount: 0
+            podDisruptionBudget:
+              enabled: true
+              minAvailable: 1
+            nodeSelector:
+              nodepool: system
+            tolerations:
+              - key: nodepool
+                operator: Equal
+                value: system
+                effect: NoSchedule
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: webhook
+                    topologyKey: kubernetes.io/hostname
+          cainjector:
+            replicaCount: 0
+            podDisruptionBudget:
+              enabled: true
+              minAvailable: 1
+            nodeSelector:
+              nodepool: system
+            tolerations:
+              - key: nodepool
+                operator: Equal
+                value: system
+                effect: NoSchedule
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+    - repoURL: https://github.com/nexoraua/nexora-gitops.git
+      targetRevision: main
+      path: clusters/production/dr-hel1/platform/cert-manager
+  destination:
+    name: production-hel1
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

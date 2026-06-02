@@ -1,0 +1,27 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# PodDisruptionBudgets for the regional CNPG clusters. Selectors retarget
+# to nexora-business-production-nbg1 / nexora-authentik-production-nbg1.
+# Each clones FSN1 sizing: 3 instances, maxUnavailable=1.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-business-pdb
+  namespace: postgresql
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-business-production-nbg1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cnpg-authentik-pdb
+  namespace: authentik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/cluster: nexora-authentik-production-nbg1

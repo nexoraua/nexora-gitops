@@ -1,0 +1,70 @@
+# Tempo — HEL1 DR cold standby.
+# Backend bucket: nexora-tempo-production-hel1 (regional Hetzner OS).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo-distributed
+    targetRevision: 1.27.0
+    helm:
+      values: |
+        tempo:
+          structuredConfig:
+            compactor:
+              compaction:
+                block_retention: 336h
+            ingester:
+              replication_factor: 3
+        storage:
+          trace:
+            backend: s3
+            s3:
+              endpoint: hel1.your-objectstorage.com
+              region: hel1
+              bucket: nexora-tempo-production-hel1
+              forcepathstyle: true
+              insecure: false
+        global:
+          extraEnvFrom:
+            - secretRef:
+                name: tempo-s3
+        distributor:
+          replicas: 2
+          persistence:
+            enabled: false
+        ingester:
+          replicas: 3
+          persistence:
+            enabled: true
+            storageClass: linstor-r1
+            size: 20Gi
+        querier:
+          replicas: 2
+        queryFrontend:
+          replicas: 2
+        compactor:
+          replicas: 2
+        metricsGenerator:
+          enabled: false
+  destination:
+    name: production-hel1
+    namespace: monitoring
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

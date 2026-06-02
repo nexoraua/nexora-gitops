@@ -1,0 +1,28 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# LINSTOR runtime config — applied AFTER piraeus-operator installs the
+# CRDs. DR copy; destination flipped to production-nbg1. Hosts the same
+# linstor-r1 + linstor-r3 StorageClasses as FSN1 — CNPG replica, RabbitMQ,
+# Dragonfly, and Vault depend on these.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linstor-config-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-nbg1/platform/linstor
+  destination:
+    name: production-nbg1
+    namespace: piraeus-datastore
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

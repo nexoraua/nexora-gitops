@@ -1,0 +1,27 @@
+# Monitoring rules (VMRule) — HEL1 DR cold standby.
+# Wraps clusters/production/dr-hel1/platform/monitoring/ — regional
+# cnpg-backup-alerts (cluster-name labels retargeted to
+# nexora-business/authentik-production-hel1) and dr-sync-alerts focused
+# on cross-region streaming replication lag.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-rules-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-hel1/platform/monitoring
+  destination:
+    name: production-hel1
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

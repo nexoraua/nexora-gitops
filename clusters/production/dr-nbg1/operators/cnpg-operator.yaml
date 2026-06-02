@@ -1,0 +1,60 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# CloudNativePG operator — manages every production PostgreSQL cluster.
+# DR copy: destination flipped to production-nbg1, replicaCount=0 at scaffold
+# so the operator manifest is committed but does NOT run. Flip replicaCount
+# to 2 on activation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-operator-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+spec:
+  project: platform
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.22.1
+    helm:
+      values: |
+        # COLD: flip to 2 on activation.
+        replicaCount: 0
+        affinity:
+          nodeSelector:
+            nodepool: system
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: cloudnative-pg
+                topologyKey: kubernetes.io/hostname
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+  destination:
+    name: production-nbg1
+    namespace: cnpg-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

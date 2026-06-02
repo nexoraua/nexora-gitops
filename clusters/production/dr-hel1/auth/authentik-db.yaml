@@ -1,0 +1,30 @@
+# Authentik state CNPG cluster — HEL1 DR cold standby.
+# Wraps clusters/production/dr-hel1/stateful/authentik/ which contains
+# the cnpg-cluster-replica.yaml manifest (streaming replica of
+# nexora-authentik-production, instances: 0 cold).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-db-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-hel1/stateful/authentik
+  destination:
+    name: production-hel1
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

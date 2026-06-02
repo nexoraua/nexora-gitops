@@ -1,0 +1,108 @@
+# Authentik — HEL1 DR cold standby.
+# server.replicas / worker.replicas are scaffolded at production sizing,
+# but no parent Application targets clusters/production/dr-hel1/ so the
+# effective replica count is 0.
+#
+# PG host: nexora-authentik-production-hel1-rw.authentik.svc (the
+# regional CNPG replica). On activation (replica.enabled=false on the
+# CNPG cluster), the same Service flips from a streaming replica to the
+# authoritative regional primary.
+# Redis: nexora-cache.dragonfly.svc.cluster.local (regional Dragonfly).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: apps
+  source:
+    repoURL: https://charts.goauthentik.io
+    chart: authentik
+    targetRevision: 2024.10.5
+    helm:
+      values: |
+        global:
+          envFrom:
+            - secretRef:
+                name: authentik-bootstrap
+        authentik:
+          error_reporting:
+            enabled: false
+          postgresql:
+            host: nexora-authentik-production-hel1-rw.authentik.svc
+            name: authentik
+            user: authentik
+          redis:
+            host: nexora-cache.dragonfly.svc.cluster.local
+        server:
+          replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: server
+                    topologyKey: kubernetes.io/hostname
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - auth-hel1.nxua.dev
+            tls:
+              - secretName: authentik-tls
+                hosts:
+                  - auth-hel1.nxua.dev
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+        worker:
+          replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: worker
+                    topologyKey: kubernetes.io/hostname
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        postgresql:
+          enabled: false   # provided by CNPG replica (stateful/authentik/)
+        redis:
+          enabled: false   # provided by Dragonfly (stateful/dragonfly/)
+  destination:
+    name: production-hel1
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,49 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Kubernetes metrics-server — DR copy. replicas=0 at scaffold; flip to 2 on
+# activation. HPA + kubectl top dependency.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server
+    chart: metrics-server
+    targetRevision: 3.13.0
+    helm:
+      values: |
+        args:
+          - --kubelet-insecure-tls
+          - --kubelet-preferred-address-types=InternalIP
+        # COLD: flip to 2 on activation.
+        replicas: 0
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: metrics-server
+                topologyKey: kubernetes.io/hostname
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+  destination:
+    name: production-nbg1
+    namespace: kube-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

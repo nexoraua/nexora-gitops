@@ -1,0 +1,77 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Tempo — DR copy. Object storage retargeted to nexora-tempo-production-nbg1
+# on the Hetzner NBG1 endpoint.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo-distributed
+    targetRevision: 1.27.0
+    helm:
+      values: |
+        tempo:
+          structuredConfig:
+            compactor:
+              compaction:
+                block_retention: 336h
+            ingester:
+              replication_factor: 3
+        storage:
+          trace:
+            backend: s3
+            s3:
+              endpoint: nbg1.your-objectstorage.com
+              region: nbg1
+              bucket: nexora-tempo-production-nbg1
+              forcepathstyle: true
+              insecure: false
+        global:
+          extraEnvFrom:
+            - secretRef:
+                name: tempo-s3
+        distributor:
+          # COLD: flip to 2 on activation.
+          replicas: 0
+          persistence:
+            enabled: false
+        ingester:
+          # COLD: flip to 3 on activation.
+          replicas: 0
+          persistence:
+            enabled: true
+            storageClass: linstor-r1
+            size: 20Gi
+        querier:
+          # COLD: flip to 2 on activation.
+          replicas: 0
+        queryFrontend:
+          # COLD: flip to 2 on activation.
+          replicas: 0
+        compactor:
+          # COLD: flip to 2 on activation.
+          replicas: 0
+        metricsGenerator:
+          enabled: false
+  destination:
+    name: production-nbg1
+    namespace: monitoring
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

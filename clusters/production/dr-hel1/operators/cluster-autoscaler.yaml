@@ -1,0 +1,93 @@
+# cluster-autoscaler — HEL1 DR cold standby.
+# Stays at replicaCount=0 even on DR activation until the regional
+# worker pool sizing is validated. HCLOUD_REGION pinned to hel1 for the
+# day the autoscaler is enabled here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-autoscaler-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    targetRevision: 9.46.0
+    helm:
+      values: |
+        replicaCount: 0
+        cloudProvider: hetzner
+        autoDiscovery:
+          clusterName: nexora-production-hel1
+        extraEnv:
+          HCLOUD_CLUSTER_CONFIG: |
+            {
+              "imagesForArch": {
+                "arm64": [],
+                "amd64": []
+              },
+              "nodeConfigs": {
+                "workers": {
+                  "cloudInit": "",
+                  "labels": {
+                    "nodepool": "workers",
+                    "environment": "production"
+                  },
+                  "taints": []
+                }
+              }
+            }
+          HCLOUD_NETWORK: nexora-production-hel1
+          HCLOUD_FIREWALL: nexora-production-hel1-workers
+          HCLOUD_SSH_KEY: nexora-ops
+          HCLOUD_REGION: hel1
+          HCLOUD_IMAGE: ""
+          HCLOUD_TOKEN: ""
+        extraEnvSecrets:
+          HCLOUD_TOKEN:
+            name: hcloud-autoscaler
+            key: token
+        autoscalingGroups:
+          - name: workers
+            minSize: 2
+            maxSize: 6
+            instanceType: cpx31
+            region: hel1
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        rbac:
+          create: true
+          serviceAccount:
+            create: true
+            name: cluster-autoscaler
+        extraArgs:
+          v: 4
+          stderrthreshold: info
+          scale-down-enabled: "true"
+          scale-down-utilization-threshold: 0.5
+          scale-down-delay-after-add: 10m
+          scale-down-unneeded-time: 10m
+          max-node-provision-time: 15m
+          balance-similar-node-groups: "true"
+  destination:
+    name: production-hel1
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

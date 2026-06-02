@@ -1,0 +1,47 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Hetzner Cloud CSI driver — DR copy. Backs Vault dataStorage on
+# hcloud-volumes; mandatory for Vault HA boot in the DR region. Controller
+# replicaCount=0 at scaffold; flip to 2 on activation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hcloud-csi-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: platform
+  source:
+    repoURL: https://charts.hetzner.cloud
+    chart: hcloud-csi
+    targetRevision: 2.13.0
+    helm:
+      values: |
+        controller:
+          # COLD: flip to 2 on activation.
+          replicaCount: 0
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+        node:
+          tolerations:
+            - operator: Exists
+              effect: NoSchedule
+        storageClasses:
+          - name: hcloud-volumes
+            defaultStorageClass: false
+            reclaimPolicy: Retain
+        secret:
+          create: false
+          name: hcloud
+  destination:
+    name: production-nbg1
+    namespace: kube-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

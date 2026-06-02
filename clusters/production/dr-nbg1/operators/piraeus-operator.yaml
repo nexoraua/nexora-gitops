@@ -1,0 +1,32 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Piraeus Operator — LINSTOR-based CSI storage. DR copy; destination
+# flipped to production-nbg1. Operator must reconcile before any CNPG,
+# Vault, RabbitMQ, or Dragonfly PVC binds in the DR cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: piraeus-operator-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/piraeusdatastore/piraeus-operator.git
+    targetRevision: v2.10.7
+    path: config/default
+  destination:
+    name: production-nbg1
+    namespace: piraeus-datastore
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true

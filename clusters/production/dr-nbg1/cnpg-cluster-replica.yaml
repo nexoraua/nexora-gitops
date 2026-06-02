@@ -1,5 +1,13 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
 # CNPG streaming-replica bootstrap for NBG1 cold standby.
 # replicas: 0 by default — no Application targets this directory.
+#
+# Resources MUST mirror the FSN1 primary (stateful/postgresql/cnpg-cluster.yaml)
+# — on promotion this replica becomes the active primary and inherits the
+# full production workload (max_connections=200, work_mem=32MB peaks,
+# shared_buffers=3GB). Under-sized limits.memory would OOMKill on connection
+# storms within seconds of cutover.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -23,11 +31,27 @@ spec:
     storageClass: linstor-r3
     size: 15Gi
   resources:
+    # Aligned with FSN1 primary: 12 GiB ceiling absorbs work_mem * 200
+    # backends (~6.4 GiB) + shared_buffers (3 GiB) without OOMKilling
+    # post-promotion. Same CCX23 instance class as FSN1 stateful nodes.
     requests:
       cpu: 1000m
       memory: 4Gi
     limits:
-      memory: 8Gi
+      memory: 12Gi
+  postgresql:
+    # Same tuning as FSN1 primary — values are picked up immediately on
+    # promotion, no rolling restart needed.
+    parameters:
+      max_connections: "200"
+      shared_buffers: "3GB"
+      effective_cache_size: "9GB"
+      work_mem: "32MB"
+      wal_level: "logical"
+      pg_stat_statements.track: "all"
+    shared_preload_libraries:
+      - pg_stat_statements
+      - pgaudit
   bootstrap:
     pg_basebackup:
       source: nexora-business-production

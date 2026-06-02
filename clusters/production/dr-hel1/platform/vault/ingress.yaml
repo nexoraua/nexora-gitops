@@ -1,0 +1,55 @@
+# Vault UI ingress — HEL1 DR cold standby.
+# Hostname: vault-hel1.nxua.dev. Cloudflare Access sits in front;
+# Cloudflare configuration is in nexora-infra/modules/cloudflare/access.tf.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vault-ui
+  namespace: vault-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`vault-hel1.nxua.dev`)
+      kind: Rule
+      middlewares:
+        - name: cloudflare-jwt-assertion
+          namespace: traefik
+      services:
+        - name: vault-active
+          port: 8200
+          scheme: http
+  tls:
+    secretName: vault-ui-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ui-tls
+  namespace: vault-system
+spec:
+  secretName: vault-ui-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: vault-hel1.nxua.dev
+  dnsNames:
+    - vault-hel1.nxua.dev
+  duration: 2160h     # 90 days
+  renewBefore: 360h   # 15 days
+---
+# Validates the Cf-Access-Jwt-Assertion header issued by Cloudflare Access.
+# The validator reads CF_ACCESS_AUD + team-domain from the
+# cloudflare-access ExternalSecret (ESO from
+# kv/nexora/production-hel1/cloudflare-access).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cloudflare-jwt-assertion
+  namespace: traefik
+spec:
+  forwardAuth:
+    address: http://cf-access-validator.traefik.svc:8080/verify
+    trustForwardHeader: true
+    authResponseHeaders:
+      - X-Cf-Access-Authenticated-User-Email

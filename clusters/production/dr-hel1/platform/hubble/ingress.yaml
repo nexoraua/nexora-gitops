@@ -1,0 +1,38 @@
+# Hubble UI ingress — HEL1 DR cold standby.
+# Host hubble-hel1.nxua.dev. Cloudflare Access JWT assertion in front.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: hubble-ui
+  namespace: kube-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`hubble-hel1.nxua.dev`)
+      kind: Rule
+      middlewares:
+        - name: cloudflare-jwt-assertion
+          namespace: traefik
+      services:
+        - name: hubble-ui
+          port: 80
+          scheme: http
+  tls:
+    secretName: hubble-ui-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hubble-ui-tls
+  namespace: kube-system
+spec:
+  secretName: hubble-ui-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: hubble-hel1.nxua.dev
+  dnsNames:
+    - hubble-hel1.nxua.dev
+  duration: 2160h
+  renewBefore: 360h

@@ -1,0 +1,48 @@
+# RabbitMQ cluster — HEL1 DR cold standby.
+# replicas: 0 scaffolded. RabbitMQ state is non-authoritative across the
+# DR boundary (DLQ + retry); no cross-region federation at day-1 — the
+# cluster is recreated empty on activation. Quorum queues + linstor-r1
+# back-storage are identical to FSN1.
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: nexora-rabbitmq
+  namespace: rabbitmq
+spec:
+  replicas: 0   # COLD: flip to 3 on activation
+  image: rabbitmq:4.0-management
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  persistence:
+    storageClassName: linstor-r1
+    storage: 20Gi
+  rabbitmq:
+    additionalConfig: |
+      cluster_partition_handling = pause_minority
+      collect_statistics_interval = 10000
+      default_queue_type = quorum
+      cluster_formation.peer_discovery_backend = k8s
+  override:
+    statefulSet:
+      spec:
+        template:
+          metadata:
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "15692"
+          spec:
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: nexora-rabbitmq
+                    topologyKey: kubernetes.io/hostname
+            containers: []
+  secretBackend:
+    externalSecret:
+      name: rabbitmq-credentials

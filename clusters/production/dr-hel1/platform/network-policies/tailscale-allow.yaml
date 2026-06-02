@@ -1,0 +1,45 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-hel1/README.md.
+#
+# Tailscale namespace governance for HEL1. Mirrors the FSN1 posture
+# (clusters/production/platform/network-policies/default-deny.yaml line 6-8
+# explicitly excludes tailscale from default-deny because the subnet
+# router is an L3 forwarder — a deny-all NetworkPolicy on it would
+# fight its purpose and risk lockout).
+#
+# In FSN1 the namespace is created implicitly by Argo CD
+# (apps/tailscale.yaml carries CreateNamespace=true + privileged PSA).
+# In HEL1 the dr-tailscale-router StatefulSet has no parent Argo
+# Application and is reconciled by the dr-hel1 root Application — which
+# does NOT inject managedNamespaceMetadata on a per-workload basis. So
+# we declare the Namespace explicitly here with the privileged PSA
+# label the subnet router needs (NET_ADMIN + NET_RAW capabilities).
+#
+# The NetworkPolicy is deliberately permissive (allow-all ingress +
+# egress). It exists so the namespace is "governed" by an explicit
+# manifest rather than silently relying on the absence of a deny — that
+# way a future blanket default-deny-all bundle does not break the
+# router accidentally.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tailscale-allow-all
+  namespace: tailscale
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {}
+  egress:
+    - {}

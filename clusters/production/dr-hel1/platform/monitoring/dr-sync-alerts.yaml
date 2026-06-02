@@ -1,0 +1,89 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-hel1/README.md.
+#
+# DR-specific replication-lag alerts for the HEL1 async-replica region.
+#
+# This file EXTENDS the FSN1 dr-sync-alerts.yaml — it does NOT duplicate
+# the rclone CronJob alerts (CNPGDRSyncBusinessFailed /
+# CNPGDRSyncAuthentikFailed / CNPGDRSyncBusinessStale). Those only fire
+# in the region that owns the AWS S3 immutable copy (FSN1 at day-1).
+# Duplicating them here would double-page on a single failure and would
+# also race on the global AWS Object Lock retention extension.
+#
+# HEL1 is an ASYNC streaming replica of the FSN1 primary, RPO <= 5 min.
+# These rules focus on:
+#   1. Streaming replication lag from the FSN1 primary (the metric
+#      that defines whether the regional replica can serve as a
+#      failover target).
+#   2. Connectivity to the external primary (replica disconnects /
+#      retries).
+#
+# Group name + alert names + label shape mirror dr-nbg1 so on-call
+# routing rules match without per-region overrides.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: cnpg-dr-sync-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: nexora
+    nexora.io/component: cnpg-dr
+    nexora.io/region: hel1
+spec:
+  groups:
+    - name: cnpg-dr-replica-lag
+      rules:
+        # Streaming replication lag from FSN1 primary > 5 min.
+        - alert: CNPGReplicaLagBusinessHigh
+          expr: |
+            max by (cluster)(
+              cnpg_pg_replication_lag{cluster="nexora-business-production-hel1"}
+            ) > 300
+          for: 10m
+          labels:
+            severity: critical
+            component: cnpg-dr
+            region: hel1
+            cluster: nexora-business-production-hel1
+          annotations:
+            summary: "HEL1 business replica streaming lag > 5 min"
+            description: >-
+              Replication lag on nexora-business-production-hel1 has
+              exceeded the 5-minute RPO target. The region cannot meet
+              its failover RPO until lag returns under threshold.
+
+        - alert: CNPGReplicaLagAuthentikHigh
+          expr: |
+            max by (cluster)(
+              cnpg_pg_replication_lag{cluster="nexora-authentik-production-hel1"}
+            ) > 300
+          for: 10m
+          labels:
+            severity: critical
+            component: cnpg-dr
+            region: hel1
+            cluster: nexora-authentik-production-hel1
+          annotations:
+            summary: "HEL1 authentik replica streaming lag > 5 min"
+            description: >-
+              Replication lag on nexora-authentik-production-hel1 has
+              exceeded the 5-minute RPO target.
+
+        # Replica process restarted or cannot reach the FSN1 primary.
+        - alert: CNPGReplicaNotStreaming
+          expr: |
+            cnpg_pg_replication_in_recovery{cluster=~"nexora-(business|authentik)-production-hel1"} == 1
+            and on (cluster) (
+              cnpg_pg_replication_lag{cluster=~"nexora-(business|authentik)-production-hel1"} == 0
+            )
+          for: 15m
+          labels:
+            severity: warning
+            component: cnpg-dr
+            region: hel1
+          annotations:
+            summary: "HEL1 CNPG replica {{ $labels.cluster }} reports zero lag while in recovery"
+            description: >-
+              The HEL1 replica is in recovery mode but the WAL replay
+              position has not advanced. The tailnet route to the FSN1
+              primary may be down — check dr-tailscale-router and the
+              FSN1 subnet router peer status.

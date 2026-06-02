@@ -1,0 +1,106 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Grafana — DR copy. Ingress host grafana-nbg1.nxua.dev; OIDC redirect URL
+# auth-nbg1.nxua.dev. Datasources unchanged (intra-cluster Services).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: observability
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: grafana
+    targetRevision: 8.5.4
+    helm:
+      values: |
+        # COLD: flip to 2 on activation.
+        replicas: 0
+        persistence:
+          enabled: false
+        podDisruptionBudget:
+          minAvailable: 1
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: grafana
+                topologyKey: kubernetes.io/hostname
+        admin:
+          existingSecret: grafana-admin
+          userKey: admin-user
+          passwordKey: admin-password
+        ingress:
+          enabled: true
+          ingressClassName: traefik
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-prod
+          hosts:
+            - grafana-nbg1.nxua.dev
+          tls:
+            - secretName: grafana-tls
+              hosts:
+                - grafana-nbg1.nxua.dev
+        extraSecretMounts:
+          - name: oidc-credentials
+            secretName: grafana-oidc
+            mountPath: /etc/grafana/secrets
+            readOnly: true
+        grafana.ini:
+          server:
+            root_url: https://grafana-nbg1.nxua.dev
+          auth.generic_oauth:
+            enabled: true
+            name: Authentik
+            allow_sign_up: true
+            client_id: $__file{/etc/grafana/secrets/oidc-client-id}
+            client_secret: $__file{/etc/grafana/secrets/oidc-client-secret}
+            scopes: openid profile email groups
+            auth_url: https://auth-nbg1.nxua.dev/application/o/authorize/
+            token_url: https://auth-nbg1.nxua.dev/application/o/token/
+            api_url: https://auth-nbg1.nxua.dev/application/o/userinfo/
+            role_attribute_path: "contains(groups[*], 'grafana-admin') && 'Admin' || contains(groups[*], 'grafana-editor') && 'Editor' || 'Viewer'"
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              - name: VictoriaMetrics
+                type: prometheus
+                isDefault: true
+                url: http://vmselect-vm.monitoring.svc:8481/select/0/prometheus
+                access: proxy
+              - name: Loki
+                type: loki
+                url: http://loki-gateway.monitoring.svc
+                access: proxy
+              - name: Tempo
+                type: tempo
+                url: http://tempo-query-frontend.monitoring.svc:3100
+                access: proxy
+        sidecar:
+          dashboards:
+            enabled: true
+            label: grafana_dashboard
+            labelValue: "1"
+          datasources:
+            enabled: false
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+  destination:
+    name: production-nbg1
+    namespace: monitoring
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

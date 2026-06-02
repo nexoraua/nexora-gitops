@@ -1,0 +1,96 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# cluster-autoscaler — DR copy. Stays at replicaCount=0 EVEN on activation
+# until the NBG1 worker-pool sizing is validated (matches FSN1 day-1
+# posture per ADR-I-0003). HCLOUD_REGION pinned to nbg1.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-autoscaler-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    targetRevision: 9.46.0
+    helm:
+      values: |
+        # SCAFFOLDING + DR: keep at 0 even after activation until sizing is
+        # validated for the NBG1 worker pool.
+        replicaCount: 0
+        cloudProvider: hetzner
+        autoDiscovery:
+          clusterName: nexora-production-nbg1
+        extraEnv:
+          HCLOUD_CLUSTER_CONFIG: |
+            {
+              "imagesForArch": {
+                "arm64": [],
+                "amd64": []
+              },
+              "nodeConfigs": {
+                "workers": {
+                  "cloudInit": "",
+                  "labels": {
+                    "nodepool": "workers",
+                    "environment": "production"
+                  },
+                  "taints": []
+                }
+              }
+            }
+          HCLOUD_NETWORK: nexora-production-nbg1
+          HCLOUD_FIREWALL: nexora-production-nbg1-workers
+          HCLOUD_SSH_KEY: nexora-ops
+          HCLOUD_REGION: nbg1
+          HCLOUD_IMAGE: ""
+          HCLOUD_TOKEN: ""
+        extraEnvSecrets:
+          HCLOUD_TOKEN:
+            name: hcloud-autoscaler
+            key: token
+        autoscalingGroups:
+          - name: workers
+            minSize: 2
+            maxSize: 6
+            instanceType: cpx31
+            region: nbg1
+        nodeSelector:
+          nodepool: system
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        rbac:
+          create: true
+          serviceAccount:
+            create: true
+            name: cluster-autoscaler
+        extraArgs:
+          v: 4
+          stderrthreshold: info
+          scale-down-enabled: "true"
+          scale-down-utilization-threshold: 0.5
+          scale-down-delay-after-add: 10m
+          scale-down-unneeded-time: 10m
+          max-node-provision-time: 15m
+          balance-similar-node-groups: "true"
+  destination:
+    name: production-nbg1
+    namespace: kube-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

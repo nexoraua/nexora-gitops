@@ -1,0 +1,45 @@
+# Hetzner Cloud CSI driver — HEL1 DR cold standby.
+# Backs Vault dataStorage on hcloud-volumes; mandatory for Vault HA boot.
+# Reuses the kube-system/hcloud Secret provisioned by Talos in
+# nexora-infra/environments/production-hel1/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hcloud-csi-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: platform
+  source:
+    repoURL: https://charts.hetzner.cloud
+    chart: hcloud-csi
+    targetRevision: 2.13.0
+    helm:
+      values: |
+        controller:
+          replicaCount: 0
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+        node:
+          tolerations:
+            - operator: Exists
+              effect: NoSchedule
+        storageClasses:
+          - name: hcloud-volumes
+            defaultStorageClass: false
+            reclaimPolicy: Retain
+        secret:
+          create: false
+          name: hcloud
+  destination:
+    name: production-hel1
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

@@ -1,0 +1,40 @@
+# Dragonfly cluster — HEL1 DR cold standby.
+# replicas: 0 scaffolded. Cache layer is non-authoritative; no
+# cross-region sync. Activation recreates the cache empty (apps re-warm
+# on first lookups). Same args + linstor-r1 snapshot PVC as FSN1.
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: nexora-cache
+  namespace: dragonfly
+spec:
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.24.0
+  replicas: 0   # COLD: flip to 3 on activation
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+  args:
+    - --maxmemory=2gb
+    - --proactor_threads=4
+    - --snapshot_cron=0 */4 * * *
+    - --cluster_mode=emulated
+    - --dir=/data
+  snapshot:
+    cron: "0 */4 * * *"
+    persistentVolumeClaimSpec:
+      storageClassName: linstor-r1
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: nexora-cache
+              app.kubernetes.io/part-of: dragonfly
+          topologyKey: kubernetes.io/hostname

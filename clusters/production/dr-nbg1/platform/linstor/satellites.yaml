@@ -1,0 +1,54 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Per-nodepool LinstorSatelliteConfiguration — verbatim from FSN1.
+# pool-workers / pool-system / pool-stateful all configured identically.
+---
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-workers
+spec:
+  nodeSelector:
+    nodepool: workers
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-system
+spec:
+  nodeSelector:
+    nodepool: system
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: system
+          effect: NoSchedule
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore
+---
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: pool-stateful
+spec:
+  nodeSelector:
+    nodepool: database
+  podTemplate:
+    spec:
+      tolerations:
+        - key: nodepool
+          operator: Equal
+          value: database
+          effect: NoSchedule
+  storagePools:
+    - name: pool0
+      fileThinPool:
+        directory: /var/lib/piraeus-datastore

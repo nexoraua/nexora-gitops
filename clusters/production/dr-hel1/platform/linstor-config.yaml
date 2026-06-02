@@ -1,0 +1,29 @@
+# LINSTOR runtime config — HEL1 DR cold standby. Applied AFTER
+# piraeus-operator installs the CRDs. References LinstorCluster +
+# LinstorSatelliteConfiguration + StorageClasses (linstor-r3 + linstor-r1).
+# Reuses the FSN1 linstor manifests verbatim (identical satellite layout
+# and StorageClass names); the regional Talos overrides for the kubelet
+# extension are applied by Terraform under
+# nexora-infra/environments/production-hel1/, NOT here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linstor-config-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/linstor
+  destination:
+    name: production-hel1
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

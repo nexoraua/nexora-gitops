@@ -1,0 +1,27 @@
+# Grafana dashboards — HEL1 DR cold standby.
+# Reuses the develop tree's dashboard JSON (environment-agnostic
+# datasources: VictoriaMetrics / Loki / Tempo). When HEL1-specific
+# multi-region dashboards arrive, fork them into
+# clusters/production/dr-hel1/platform/grafana-dashboards/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/grafana-dashboards
+  destination:
+    name: production-hel1
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

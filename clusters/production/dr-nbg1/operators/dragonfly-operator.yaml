@@ -1,0 +1,27 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dragonfly-operator-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/dragonflydb/dragonfly-operator.git
+    targetRevision: v1.1.11
+    path: manifests
+  destination:
+    name: production-nbg1
+    namespace: dragonfly-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

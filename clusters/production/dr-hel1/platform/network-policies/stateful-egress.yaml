@@ -1,0 +1,367 @@
+# Baseline egress allows for the stateful namespaces — HEL1 DR cold standby.
+#
+# Three deltas vs FSN1 source manifest:
+#   1. Hetzner Object Storage FQDN points at the regional endpoint
+#      hel1.your-objectstorage.com (regional CNPG backup bucket
+#      nexora-cnpg-backups-production-hel1 / authentik-hel1).
+#   2. CNPG instances need egress to the FSN1 tailnet hostname for
+#      pg_basebackup + streaming replication from the primary. The L3
+#      route is provided by dr-tailscale-router.yaml; this policy
+#      authorises the L4 connection to the FSN1 cluster CIDR
+#      (10.60.0.0/16) on the Postgres port.
+#   3. The DR-sync rclone CronJob policy from FSN1 is INTENTIONALLY
+#      omitted — the AWS S3 Object Lock WORM sync runs ONLY in the
+#      active FSN1 region. Adding a CronJob here would race on Object
+#      Lock retention extension.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-dns
+  namespace: postgresql
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-apiserver
+  namespace: postgresql
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-dns
+  namespace: dragonfly
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-apiserver
+  namespace: dragonfly
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-dns
+  namespace: rabbitmq
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: egress-apiserver
+  namespace: rabbitmq
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+---
+# CNPG instance peer + monitoring + app + cross-region streaming-replica
+# bootstrap egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cnpg-peer
+  namespace: postgresql
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/podRole: instance
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9187
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexora-api
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexora-admin
+      ports:
+        - port: 5432
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/podRole: instance
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+---
+# Cross-region streaming replication: HEL1 replica reaches the FSN1
+# primary RW Service via the tailnet hostname
+# nexora-business-production-rw.fsn1.tailnet.nxua.ts.net. The Tailscale
+# subnet router in this region (dr-tailscale-router.yaml) advertises
+# 10.62.0.0/16; the FSN1 side advertises 10.60.0.0/16. The L4 connection
+# resolves to a 10.60/16 address (FSN1 cluster CIDR), so the CIDR-based
+# Cilium policy below authorises egress to that range over PG (5432) and
+# tailnet DNS (53). pg_basebackup + WAL streaming run over this path.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cnpg-egress-fsn1-streaming
+  namespace: postgresql
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  egress:
+    - toCIDR:
+        - "10.60.0.0/16"
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-peer
+  namespace: rabbitmq
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nexora-rabbitmq
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexora-rabbitmq
+      ports:
+        - port: 5672
+          protocol: TCP
+        - port: 4369
+          protocol: TCP
+        - port: 25672
+          protocol: TCP
+        - port: 15672
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: rabbitmq-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 15672
+          protocol: TCP
+        - port: 15692
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexora-api
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nexora-admin
+      ports:
+        - port: 5672
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nexora-rabbitmq
+      ports:
+        - port: 5672
+          protocol: TCP
+        - port: 4369
+          protocol: TCP
+        - port: 25672
+          protocol: TCP
+        - port: 15672
+          protocol: TCP
+---
+# CNPG instance + restore-Job egress to regional Hetzner Object Storage
+# (HEL1). Bucket: nexora-cnpg-backups-production-hel1.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cnpg-egress-object-storage
+  namespace: postgresql
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: cnpg.io/cluster
+        operator: Exists
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: "hel1.your-objectstorage.com"
+        - matchPattern: "*.hel1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Same egress for the authentik-co-located CNPG cluster.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cnpg-egress-object-storage
+  namespace: authentik
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: cnpg.io/cluster
+        operator: Exists
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: "hel1.your-objectstorage.com"
+        - matchPattern: "*.hel1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Cross-region streaming replication for the authentik CNPG replica —
+# same pattern as the business cluster: reach the FSN1 RW Service via
+# the tailnet hostname, which resolves into the FSN1 cluster CIDR.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cnpg-egress-fsn1-streaming
+  namespace: authentik
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  egress:
+    - toCIDR:
+        - "10.60.0.0/16"
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

@@ -1,0 +1,79 @@
+# DR activation Application for Hetzner NBG1 (sync-replica region).
+#
+# THIS FILE IS NOT RECONCILED AT DAY-1.
+#
+# It lives under clusters/production/apps-dr/ (NOT apps/) so the root
+# app-of-apps Application (clusters/production/root.yaml) — which scans
+# only clusters/production/apps/ with recurse: false — cannot pick it up
+# by accident. The committed file freezes the canonical activation shape
+# (destination.name, source.path, project, ignoreDifferences) so the
+# activation diff is bounded.
+#
+# Activation procedure: see clusters/production/dr-nbg1/dr-activation-runbook.md
+#
+# Day-N flip (manual, one-time):
+#   kubectl apply -n argocd -f clusters/production/apps-dr/dr-nbg1.yaml
+#
+# Pre-conditions before that apply:
+#   1. Talos cluster in NBG1 is up (Terraform workspace
+#      nexora-infra/environments/production-nbg1/ has been applied).
+#   2. The NBG1 cluster has been registered as a secondary Argo CD
+#      destination under the name "production-nbg1"
+#      (`argocd cluster add production-nbg1 --name production-nbg1`).
+#   3. Vault paths kv/nexora/production-nbg1/* are seeded (see the
+#      activation runbook).
+#   4. NBG1 hostnames *-nbg1.nxua.dev resolve at Cloudflare to the new
+#      LB nexora-ingress-production-nbg1.
+#
+# syncPolicy.automated is intentionally OMITTED so the first reconcile
+# is human-driven (review the diff in Argo CD UI, then click Sync). Flip
+# to automated once the DR region is steady-state.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dr-nbg1
+  namespace: argocd
+  annotations:
+    # Same wave as production-root so the DR cluster bootstraps in
+    # parallel with FSN1 platform when (and only when) this Application
+    # is applied.
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-nbg1
+    directory:
+      recurse: true
+      exclude: "{_pending-*/**,*activation-runbook.md,README.md}"
+  destination:
+    # Registered as a secondary Argo CD cluster post-activation.
+    # This NAME does NOT exist at day-1 — Argo CD will refuse to sync
+    # the Application until the cluster Secret labelled
+    # argocd.argoproj.io/secret-type=cluster with name=production-nbg1
+    # is present in the argocd namespace.
+    name: production-nbg1
+    namespace: argocd
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.target.deletionPolicy
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
+  # NO automated sync. The DR activation is intentionally a manual,
+  # auditable click. Once steady-state, uncomment the block below:
+  #
+  # syncPolicy:
+  #   automated:
+  #     prune: true
+  #     selfHeal: true
+  #   syncOptions:
+  #     - CreateNamespace=true
+  #     - ServerSideApply=true
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

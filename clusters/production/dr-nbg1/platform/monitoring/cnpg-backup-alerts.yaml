@@ -1,0 +1,92 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# CNPG backup health — DR copy for the NBG1 region. Group name, alert
+# names, expressions, and severity labels are IDENTICAL to FSN1
+# (clusters/production/platform/monitoring/cnpg-backup-alerts.yaml). The
+# only addition is a `region: nbg1` label so on-call routing can split
+# the regional fan-in without per-region alert name overrides.
+#
+# The alerts evaluate against whatever CNPG instance metrics land in
+# this region's VictoriaMetrics — i.e. the replica clusters
+# nexora-business-production-nbg1 and nexora-authentik-production-nbg1.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: cnpg-backup-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: nexora
+    nexora.io/component: cnpg-backup
+    nexora.io/region: nbg1
+spec:
+  groups:
+    - name: cnpg-backups
+      rules:
+        - alert: CNPGBackupFailed
+          expr: cnpg_collector_last_failed_backup_timestamp > cnpg_collector_last_available_backup_timestamp
+          for: 15m
+          labels:
+            severity: critical
+            component: cnpg-backup
+            region: nbg1
+          annotations:
+            summary: "CNPG base backup failed for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              The most recent CNPG base backup failed and has not been
+              followed by a successful one — the PITR base is stale.
+              Inspect: kubectl get backup -n {{ $labels.namespace }}.
+
+        - alert: CNPGNoRecentBackup
+          expr: time() - cnpg_collector_last_available_backup_timestamp > 28 * 3600
+          for: 1h
+          labels:
+            severity: critical
+            component: cnpg-backup
+            region: nbg1
+          annotations:
+            summary: "CNPG cluster {{ $labels.namespace }}/{{ $labels.pod }} has no recent base backup"
+            description: >-
+              No successful CNPG base backup in over 28h (daily
+              ScheduledBackup runs at 03:00/04:00). The 30-day PITR
+              window depends on a fresh base backup.
+
+        - alert: CNPGWALArchiveFailing
+          expr: cnpg_pg_stat_archiver_last_failed_time > cnpg_pg_stat_archiver_last_archived_time
+          for: 5m
+          labels:
+            severity: critical
+            component: cnpg-backup
+            region: nbg1
+          annotations:
+            summary: "CNPG WAL archiving is failing for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              The most recent WAL archive attempt failed
+              (last_failed_time is newer than last_archived_time). PITR
+              cannot advance. Check barman-cloud-wal-archive logs.
+
+        - alert: CNPGWALFilesPilingUp
+          expr: cnpg_collector_pg_wal_archive_status{value="ready"} > 20
+          for: 15m
+          labels:
+            severity: critical
+            component: cnpg-backup
+            region: nbg1
+          annotations:
+            summary: "CNPG WAL archive backlog growing for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              {{ $value }} WAL segments are waiting to be archived —
+              archiving is stuck. The WAL volume will fill and PITR
+              cannot advance.
+
+        - alert: CNPGBackupCollectorDown
+          expr: cnpg_collector_up == 0
+          for: 10m
+          labels:
+            severity: warning
+            component: cnpg-backup
+            region: nbg1
+          annotations:
+            summary: "CNPG metrics collector down for {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: >-
+              The CNPG metrics exporter is not reporting. Backup and WAL
+              archiving health cannot be evaluated while it is down.

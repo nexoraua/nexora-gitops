@@ -1,0 +1,26 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Hubble UI Application — points at the regional hubble platform manifest
+# (host hubble-nbg1.nxua.dev).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hubble-ingress-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-nbg1/platform/hubble
+  destination:
+    name: production-nbg1
+    namespace: kube-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

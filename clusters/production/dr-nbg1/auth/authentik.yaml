@@ -1,0 +1,106 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Authentik — DR copy. Ingress host auth-nbg1.nxua.dev; PG host points at
+# the regional CNPG cluster nexora-authentik-production-nbg1-rw. Redis
+# host stays nexora-cache.dragonfly.svc (local Dragonfly Service name is
+# identical in every region).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: apps
+  source:
+    repoURL: https://charts.goauthentik.io
+    chart: authentik
+    targetRevision: 2024.10.5
+    helm:
+      values: |
+        global:
+          envFrom:
+            - secretRef:
+                name: authentik-bootstrap
+        authentik:
+          error_reporting:
+            enabled: false
+          postgresql:
+            host: nexora-authentik-production-nbg1-rw.authentik.svc
+            name: authentik
+            user: authentik
+          redis:
+            host: nexora-cache.dragonfly.svc.cluster.local
+        server:
+          # COLD: flip to 2 on activation.
+          replicas: 0
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: server
+                    topologyKey: kubernetes.io/hostname
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - auth-nbg1.nxua.dev
+            tls:
+              - secretName: authentik-tls
+                hosts:
+                  - auth-nbg1.nxua.dev
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+        worker:
+          # COLD: flip to 2 on activation.
+          replicas: 0
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: authentik
+                        app.kubernetes.io/component: worker
+                    topologyKey: kubernetes.io/hostname
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        postgresql:
+          enabled: false
+        redis:
+          enabled: false
+  destination:
+    name: production-nbg1
+    namespace: authentik
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

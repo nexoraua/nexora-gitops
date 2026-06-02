@@ -1,0 +1,30 @@
+# RabbitMQ Cluster Operator — HEL1 DR cold standby.
+# Mirrors clusters/production/apps/rabbitmq-operator.yaml; destination
+# is the Argo CD secondary cluster `production-hel1`. Required before
+# stateful/rabbitmq/rabbitmq-cluster.yaml in this region.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rabbitmq-operator-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/rabbitmq/cluster-operator.git
+    targetRevision: v2.21.0
+    path: config/installation
+  destination:
+    name: production-hel1
+    namespace: rabbitmq-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

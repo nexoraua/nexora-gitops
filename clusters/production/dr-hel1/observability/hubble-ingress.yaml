@@ -1,0 +1,25 @@
+# Hubble UI ingress — HEL1 DR cold standby.
+# Wraps clusters/production/dr-hel1/platform/hubble/ (IngressRoute +
+# Certificate for hubble-hel1.nxua.dev).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hubble-ingress-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/dr-hel1/platform/hubble
+  destination:
+    name: production-hel1
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

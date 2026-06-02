@@ -1,0 +1,58 @@
+# CloudNativePG operator — HEL1 DR cold standby.
+# Mirrors clusters/production/apps/cnpg-operator.yaml; only the
+# destination flips to the registered Argo CD cluster `production-hel1`.
+# No parent Application targets clusters/production/dr-hel1/ at day-1,
+# so this file ships but does not reconcile until activation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-operator-hel1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+spec:
+  project: platform
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.22.1
+    helm:
+      values: |
+        replicaCount: 0
+        affinity:
+          nodeSelector:
+            nodepool: system
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: cloudnative-pg
+                topologyKey: kubernetes.io/hostname
+        tolerations:
+          - key: nodepool
+            operator: Equal
+            value: system
+            effect: NoSchedule
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+  destination:
+    name: production-hel1
+    namespace: cnpg-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,122 @@
+# DR scaffold — inactive until activation. See clusters/production/dr-nbg1/README.md.
+#
+# Vault HA — DR copy. Identical chart pin and Raft config; same AWS KMS
+# transit auto-unseal alias/nexora-transit-production (single global
+# Transit key reused across FSN1 + DR regions on purpose — all Vault
+# clusters in the production family share the same root-of-trust). The
+# parent Application in apps/dr-nbg1.yaml is intentionally absent day-1
+# so this manifest is committed but never reconciles until activation.
+# The chart value ha.replicas=3 is the post-activation target; effective
+# replicas stay at 0 because no Application references this manifest yet.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-nbg1
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: apps
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.32.0
+    helm:
+      values: |
+        global:
+          tlsDisable: true
+        server:
+          ha:
+            enabled: true
+            # COLD: flip to 3 on activation.
+            replicas: 0
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+                listener "tcp" {
+                  tls_disable = 1
+                  address     = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                }
+                storage "raft" {
+                  path = "/vault/data"
+                  retry_join {
+                    leader_api_addr = "http://vault-0.vault-internal:8200"
+                  }
+                  retry_join {
+                    leader_api_addr = "http://vault-1.vault-internal:8200"
+                  }
+                  retry_join {
+                    leader_api_addr = "http://vault-2.vault-internal:8200"
+                  }
+                }
+                # AWS KMS transit auto-unseal — same key alias as FSN1
+                # so DR Vault inherits the production root-of-trust.
+                seal "awskms" {
+                  region     = "eu-central-1"
+                  kms_key_id = "alias/nexora-transit-production"
+                }
+                service_registration "kubernetes" {}
+          dataStorage:
+            enabled: true
+            size: 20Gi
+            storageClass: hcloud-volumes
+          affinity: |
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vault
+                      app.kubernetes.io/instance: vault
+                      component: server
+                  topologyKey: kubernetes.io/hostname
+          tolerations: |
+            - key: nodepool
+              operator: Equal
+              value: system
+              effect: NoSchedule
+            - key: nodepool
+              operator: Equal
+              value: database
+              effect: NoSchedule
+          serviceAccount:
+            create: true
+            name: vault
+            annotations:
+              # REPLACE WITH REGION-LOCAL TRUST POLICY ARN AT ACTIVATION.
+              # The FSN1 IAM role nexora-vault-transit-unseal-production
+              # trusts only the FSN1 OIDC issuer URL — pointing NBG1 at
+              # it produces AssumeRoleWithWebIdentity failures during
+              # vault unseal (`AccessDenied: Not authorized to perform
+              # sts:AssumeRoleWithWebIdentity`). A dedicated NBG1 role
+              # (e.g. nexora-vault-transit-unseal-production-nbg1) must
+              # be created in Terraform with the NBG1 cluster's OIDC
+              # issuer added to its trust policy, then this ARN swapped
+              # in before Phase 5 of the DR activation runbook.
+              eks.amazonaws.com/role-arn: arn:aws:iam::727990091861:role/REPLACE-AT-ACTIVATION-nexora-vault-transit-unseal-production-nbg1
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        ui:
+          enabled: true
+          serviceType: ClusterIP
+        injector:
+          enabled: false
+  destination:
+    name: production-nbg1
+    namespace: vault-system
+  # syncPolicy.automated omitted intentionally — parent dr-nbg1 Application
+  # is manual-sync; child Applications must inherit that gate so DR
+  # activation stays a deliberate, auditable click.
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
