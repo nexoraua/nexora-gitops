@@ -152,6 +152,24 @@ vault kv put kv/nexora/staging/tailscale \
 
 Materialize: `tailscale-auth` (tailscale ns).
 
+### 12. Alertmanager Telegram destination
+
+Staging алерти йдуть в окремий топік супергрупи "NEXORA development"
+(той самий бот, що й develop, але виділений топік щоб не змішувати
+шум). Створити топік вручну → скопіювати `message_thread_id`. `chat_id`
+залишається груповий (`-100…`).
+
+```bash
+vault kv put kv/nexora/staging/alerts/telegram \
+  bot_token="<BotFather-token>" \
+  chat_id="-1003724666926" \
+  topic_id="<staging-topic-id>"
+```
+
+Materialize: `alertmanager-config` (monitoring ns) — рендерить повну
+`alertmanager.yaml` і підмонтовується у VMAlertmanager через
+`configSecret: alertmanager-config`.
+
 ## Checklist перед першим `argocd sync bootstrap-secrets`
 
 - [ ] Vault init, unseal, OIDC auth, Kubernetes auth — пройдені (див. `../vault/README.md`).
@@ -167,5 +185,6 @@ Materialize: `tailscale-auth` (tailscale ns).
 - [ ] `kv/nexora/staging/tailscale` записаний.
 - [ ] `kv/nexora/staging/vault-oidc` (тільки після того, як Authentik
       blueprint згенерував provider).
+- [ ] `kv/nexora/staging/alerts/telegram` записаний.
 - [ ] Hetzner Object Storage buckets `nexora-cnpg-backups-staging`,
       `nexora-cnpg-backups-authentik-staging` створено.

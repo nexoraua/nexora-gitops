@@ -132,15 +132,36 @@ vault kv put kv/nexora/production/cloudflare-access \
   team-domain=nexora.cloudflareaccess.com
 ```
 
-### 13. Alertmanager destinations
+### 13. Alertmanager destinations — Telegram
+
+Production alerts ship to a Telegram bot/group/topic. Before launch
+the operator should provision a **dedicated production Telegram
+supergroup** (separate from the develop one) and decide whether to
+keep the same bot or mint a production-only bot via BotFather. Either
+way, write the credentials into Vault:
 
 ```bash
-vault kv put kv/nexora/production/alerts/slack \
-  webhook_url=https://hooks.slack.com/services/...
-
-vault kv put kv/nexora/production/alerts/pagerduty \
-  integration_key=<events-api-v2-routing-key>
+vault kv put kv/nexora/production/alerts/telegram \
+  bot_token="<BotFather-token>" \
+  chat_id="-100xxxxxxxxxx" \
+  topic_id="<production-topic-id>"
 ```
+
+Materialize: `alertmanager-config` (monitoring ns) — рендерить повну
+`alertmanager.yaml` і підмонтовується у VMAlertmanager через
+`configSecret: alertmanager-config`.
+
+**Compliance follow-up (before launch):** Telegram alone is
+insufficient as the long-term audit trail for an Ukrainian fintech.
+Add either:
+
+1. a Slack mirror receiver (`kv/nexora/production/alerts/slack` →
+   workspace with retention policy), or
+2. a paging tool (PagerDuty / OpsGenie — `kv/nexora/production/alerts/pagerduty`
+   with severity=critical route, continue: true).
+
+The fan-out shape is already supported by the manifest; only the
+ExternalSecret template + KV entries need updating.
 
 ### 14. GHCR pull secret (only if private images required)
 
