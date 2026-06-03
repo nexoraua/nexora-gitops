@@ -194,7 +194,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: rabbitmq
+      app.kubernetes.io/name: nexora-rabbitmq
   policyTypes:
     - Ingress
     - Egress
@@ -202,7 +202,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: rabbitmq
+              app.kubernetes.io/name: nexora-rabbitmq
       ports:
         - port: 5672
           protocol: TCP
@@ -238,7 +238,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: rabbitmq
+              app.kubernetes.io/name: nexora-rabbitmq
       ports:
         - port: 5672
           protocol: TCP
