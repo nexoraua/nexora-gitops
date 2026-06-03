@@ -25,6 +25,12 @@ vault kv put kv/nexora/production/authentik/postgres \
   username=authentik password=$(openssl rand -base64 32)
 ```
 
+> **Rotation:** CNPG operator reconciles `superuserSecret` → `ALTER ROLE`.
+> Drilled on develop on 2026-06-03 — rotation propagates within one
+> reconcile cycle (≤15 min; can be forced via cluster annotation).
+> No downtime for existing sessions. Procedure: same as the develop
+> runbook in `clusters/develop/platform/secrets/README.md`.
+
 ### 2. Hetzner Object Storage backup credentials
 
 Hetzner Object Storage keys are project-scoped — the same key reaches
@@ -73,6 +79,17 @@ vault kv put kv/nexora/production/authentik/bootstrap \
 vault kv put kv/nexora/production/rabbitmq/admin \
   username=nexora-admin password=$(openssl rand -base64 32)
 ```
+
+> **Rotation:** RabbitMQ Cluster Operator does NOT propagate Secret
+> changes to the running broker (reads `default_user.conf` only on
+> first boot — users live in Mnesia thereafter). The gap is closed by
+> `stateful/rabbitmq/password-sync.yaml` — a 5-minute idempotent
+> CronJob that calls `rabbitmqctl change_password` from the current
+> Secret. Drilled end-to-end on develop on 2026-06-03 (rotation
+> propagated within one CronJob tick; previous + first-original
+> passwords confirmed rejected). For production this CronJob runs in
+> a 3-replica cluster; rabbitmqctl on server-0 propagates to the
+> other nodes via Mnesia. Procedure: same as develop runbook.
 
 ### 7. Grafana admin + OIDC
 

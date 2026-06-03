@@ -59,6 +59,11 @@ vault kv put kv/nexora/staging/cnpg/authentik-superuser \
 Materialize: `cnpg-superuser` (postgresql ns) та
 `cnpg-authentik-superuser` (authentik ns).
 
+> **Rotation:** CNPG operator watch-ить `superuserSecret` і при
+> зміні викликає `ALTER ROLE … PASSWORD …`. Процедура: `vault kv put`,
+> ESO sync (можна форс-анотацією), CNPG reconciles (≤15 хв). Той же
+> шлях що описаний у develop README — без downtime для існуючих сесій.
+
 ### 5. CNPG S3 backup credentials (Hetzner Object Storage)
 
 Buckets `nexora-cnpg-backups-staging` та
@@ -84,6 +89,12 @@ vault kv put kv/nexora/staging/rabbitmq/admin \
 ```
 
 Materialize: `rabbitmq-credentials` (rabbitmq ns).
+
+> **Rotation:** RabbitMQ Cluster Operator не пропагує password зі
+> Secret-у у running broker (читає лише на FIRST boot). Закрите через
+> `stateful/rabbitmq/password-sync.yaml` (CronJob кожні 5 хв викликає
+> `rabbitmqctl change_password`, idempotent). Процедура та сама як на
+> develop — див. develop README.
 
 ### 7. Authentik secret_key + bootstrap admin
 

@@ -59,6 +59,16 @@ vault kv put kv/nexora/develop/cnpg/authentik-superuser \
 Materialize: `cnpg-superuser` (postgresql ns) та
 `cnpg-authentik-superuser` (authentik ns).
 
+> **Rotation:** CNPG operator watch-ить `superuserSecret` і при
+> зміні викликає `ALTER ROLE … PASSWORD …`. Процедура:
+> `vault kv put …`, далі ESO sync (примусово —
+> `kubectl annotate externalsecret cnpg-superuser force-sync=$(date +%s)
+> --overwrite`), далі CNPG reconciles (≤15 хв; можна форснути
+> `kubectl annotate cluster nexora-business-develop
+> cnpg.io/reconciliationLoop=$(date +%s) --overwrite`). Старий
+> пароль одразу інвалідовано (DB ALTER ROLE — без downtime для
+> існуючих сесій).
+
 ### 5. CNPG S3 backup credentials (Hetzner Object Storage)
 
 Bucket `nexora-cnpg-backups-develop`, endpoint
@@ -112,6 +122,17 @@ vault kv put kv/nexora/develop/rabbitmq/admin \
 
 Materialize: `rabbitmq-credentials` (rabbitmq ns) — RabbitMQ Cluster
 Operator читає її через `spec.secretBackend.externalSecret.name`.
+
+> **Rotation:** RabbitMQ Cluster Operator читає `default_user.conf` лише
+> на FIRST boot — після цього user живе у Mnesia, і зміна Secret-у
+> не реконсилиться у running broker. Цей gap закриває
+> `stateful/rabbitmq/password-sync.yaml` — CronJob який кожні 5 хв
+> викликає `rabbitmqctl change_password` із поточного Secret-у
+> (idempotent). Процедура ротації: `vault kv put …`, потім дочекатись
+> ESO sync (1 год або примусово `kubectl annotate externalsecret
+> rabbitmq-credentials force-sync=$(date +%s) --overwrite`), потім
+> CronJob пропагує впродовж 5 хв. Force-NOW:
+> `kubectl -n rabbitmq create job rmq-sync-now-$(date +%s) --from=cronjob/rabbitmq-password-sync`.
 
 ### 9. Authentik secret_key + bootstrap admin
 
