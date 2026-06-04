@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexora-api
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/workloads/api
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nexora-api
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.target.deletionPolicy
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/warn: restricted
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

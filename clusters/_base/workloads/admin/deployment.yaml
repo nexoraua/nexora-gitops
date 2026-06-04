@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-admin
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexora-admin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nexora-admin
+        app.kubernetes.io/part-of: nexora
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: nexora-admin
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: admin
+          image: ghcr.io/nexoraua/nexora-admin:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Staging
+            - name: DOTNET_EnableDiagnostics
+              value: "0"
+            - name: NEXORA_DEPLOY_ENV
+              value: develop
+            - name: Vault__Address
+              value: http://vault.vault-system.svc:8200
+            - name: Vault__TransitMount
+              value: transit
+            - name: Vault__DefaultKeyName
+              value: nexora-pii-develop
+            - name: BlindIndex__Version
+              value: v1
+          envFrom:
+            - secretRef:
+                name: nexora-admin-runtime
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            failureThreshold: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            failureThreshold: 3
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

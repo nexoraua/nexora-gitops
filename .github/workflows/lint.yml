@@ -35,14 +35,45 @@ jobs:
       # applied to core Kubernetes kinds.
       - name: Validate manifests
         run: |
-          kubeconform \
+          skip_kinds="Application,AppProject,ClusterIssuer,Certificate,ExternalSecret,ClusterSecretStore,SecretStore"
+          skip_kinds="${skip_kinds},Cluster,ScheduledBackup,RabbitmqCluster,Dragonfly"
+          skip_kinds="${skip_kinds},VMCluster,VMAgent,VMAlert,VMAlertmanager,VMRule,VMServiceScrape,VMPodScrape"
+          skip_kinds="${skip_kinds},IngressRoute,Middleware,TLSStore,ServersTransport,Lock"
+
+          find clusters -name '*.yaml' \
+            -not -name 'kustomization.yaml' \
+            -not -path '*/workloads/*/deployment-patch.yaml' \
+            -not -path '*/grafana-dashboards/*' \
+            -print0 | xargs -0 kubeconform \
             -strict \
             -summary \
             -ignore-missing-schemas \
-            -skip "Application,AppProject,ClusterIssuer,Certificate,ExternalSecret,ClusterSecretStore,SecretStore,Cluster,ScheduledBackup,RabbitmqCluster,Dragonfly,VMCluster,VMAgent,VMAlert,VMAlertmanager,VMRule,VMServiceScrape,VMPodScrape,IngressRoute,Middleware,TLSStore,ServersTransport,Lock" \
+            -skip "$skip_kinds" \
             -schema-location default \
-            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-            $(find clusters -name '*.yaml' -not -path '*/grafana-dashboards/*')
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+      - name: Render Kustomize overlays
+        run: |
+          set -euo pipefail
+          skip_kinds="Application,AppProject,ClusterIssuer,Certificate,ExternalSecret,ClusterSecretStore,SecretStore"
+          skip_kinds="${skip_kinds},Cluster,ScheduledBackup,RabbitmqCluster,Dragonfly"
+          skip_kinds="${skip_kinds},VMCluster,VMAgent,VMAlert,VMAlertmanager,VMRule,VMServiceScrape,VMPodScrape"
+          skip_kinds="${skip_kinds},IngressRoute,Middleware,TLSStore,ServersTransport,Lock"
+
+          for kustomization in $(find clusters -path '*/workloads/*/kustomization.yaml' | sort); do
+            overlay="$(dirname "$kustomization")"
+            echo "Rendering ${overlay}"
+            kubectl kustomize "$overlay" > /tmp/rendered.yaml
+
+            kubeconform \
+              -strict \
+              -summary \
+              -ignore-missing-schemas \
+              -skip "$skip_kinds" \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              /tmp/rendered.yaml
+          done
 
   # TODO: helm-template / argocd-app-render — iterate over apps/*.yaml,
   # extract chart + values, run `helm template ... --dry-run` against

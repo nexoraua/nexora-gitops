@@ -1,0 +1,13 @@
+namespace: nexora-admin
+
+resources:
+  - ../../../_base/workloads/admin
+  - external-secrets.yaml
+  - ingress.yaml
+
+patches:
+  - path: deployment-patch.yaml
+
+images:
+  - name: ghcr.io/nexoraua/nexora-admin
+    newTag: bootstrap

@@ -1,0 +1,10 @@
+namespace: nexora-frontend
+
+resources:
+  - ../../../_base/workloads/frontend
+  - external-secrets.yaml
+  - ingress.yaml
+
+images:
+  - name: ghcr.io/nexoraua/nexora-frontend
+    newTag: bootstrap

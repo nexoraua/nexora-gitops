@@ -115,6 +115,8 @@ spec:
       namespace: nexora-api
     - server: https://kubernetes.default.svc
       namespace: nexora-admin
+    - server: https://kubernetes.default.svc
+      namespace: nexora-frontend
     # Vault bootstrap manifests include a Traefik Middleware (Cloudflare
     # Access JWT assertion) that lives in the traefik ns, and a cluster-
     # scoped ClusterSecretStore for ESO->Vault.

@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-admin
+spec:
+  template:
+    spec:
+      containers:
+        - name: admin
+          env:
+            - name: NEXORA_DEPLOY_ENV
+              value: staging
+            - name: Vault__DefaultKeyName
+              value: nexora-pii-staging

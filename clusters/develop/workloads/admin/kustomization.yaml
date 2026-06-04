@@ -1,0 +1,10 @@
+namespace: nexora-admin
+
+resources:
+  - ../../../_base/workloads/admin
+  - external-secrets.yaml
+  - ingress.yaml
+
+images:
+  - name: ghcr.io/nexoraua/nexora-admin
+    newTag: bootstrap

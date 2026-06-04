@@ -1,0 +1,12 @@
+resources:
+  - deployment.yaml
+  - pdb.yaml
+  - secure-headers.yaml
+  - service.yaml
+  - serviceaccount.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/component: admin
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/part-of: nexora

@@ -11,6 +11,7 @@ clusters/
     apps/          ArgoCD Application manifests (one per addon)
     platform/      Helm values + raw manifests for platform addons
     stateful/      CloudNativePG, RabbitMQ, Dragonfly, Vault clusters
+    workloads/     Nexora api/admin/frontend Kustomize overlays
   staging/         Hetzner NBG1 (QA, production-like topology, smaller)
   production/      Hetzner FSN1 primary + NBG1 sync + HEL1 DR
 ```
@@ -27,6 +28,9 @@ reference `gamma` cluster:
 - **stateful/**: workload clusters managed by operators. CloudNativePG
   `Cluster` resources, RabbitMQ `RabbitmqCluster`, Dragonfly `Dragonfly`
   CRs, Authentik `Cluster` + Helm release.
+- **workloads/**: Nexora application overlays (`api`, `admin`,
+  `frontend`) updated by app-repo CI after immutable GHCR images are
+  pushed. See [docs/nexora-workloads.md](docs/nexora-workloads.md).
 
 ## Separation of concerns: Terraform vs ArgoCD
 
@@ -106,6 +110,9 @@ AWS EKS migration target — `nexora-docs/adr/infra/0003-cloud-agnostic-stack.md
 | `authentik` | 2 | apps | Authentik Helm release |
 | `vault-config` | 5 | apps | Vault OIDC + policies bootstrap Job |
 | `bootstrap-secrets` | 2 | platform | ExternalSecret manifests (Vault → k8s Secrets) |
+| `nexora-api` | 5 | apps | Backend API + PreSync EF migration Job |
+| `nexora-admin` | 5 | apps | Admin service from `Nexora.slnx` |
+| `nexora-frontend` | 6 | apps | Flutter Web static frontend |
 | `pdbs` | 2 | platform | PodDisruptionBudgets for stateful + monitoring |
 | `grafana-dashboards` | 3 | observability | Dashboards as ConfigMaps |
 

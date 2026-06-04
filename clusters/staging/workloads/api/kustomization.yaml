@@ -1,0 +1,15 @@
+namespace: nexora-api
+
+resources:
+  - ../../../_base/workloads/api
+  - external-secrets.yaml
+  - ingress.yaml
+
+patches:
+  - path: deployment-patch.yaml
+
+images:
+  - name: ghcr.io/nexoraua/nexora-api
+    newTag: bootstrap
+  - name: ghcr.io/nexoraua/nexora-migrator
+    newTag: bootstrap

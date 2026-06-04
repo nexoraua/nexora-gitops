@@ -1,0 +1,17 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-headers
+spec:
+  headers:
+    stsSeconds: 63072000
+    stsIncludeSubdomains: true
+    stsPreload: true
+    forceSTSHeader: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: strict-origin-when-cross-origin
+    frameDeny: true
+    customResponseHeaders:
+      Permissions-Policy: "geolocation=(), microphone=(), camera=()"
+      X-Content-Type-Options: nosniff

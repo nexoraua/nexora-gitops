@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-api
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: NEXORA_DEPLOY_ENV
+              value: production
+            - name: Vault__DefaultKeyName
+              value: nexora-pii-production
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
