@@ -1,10 +1,14 @@
 namespace: nexora-frontend
 
 resources:
-  - ../../../_base/workloads/frontend
-  - external-secrets.yaml
-  - ingress.yaml
+- ../../../_base/workloads/frontend
+- external-secrets.yaml
+- ingress.yaml
 
 images:
-  - name: ghcr.io/nexoraua/nexora-frontend
-    newTag: bootstrap
+- digest: sha256:a620f629eda2c1325114a80b258625db2f058670cdc41a23e6307ac270995155
+  name: ghcr.io/nexoraua/nexora-frontend
+  newName: ghcr.io/nexoraua/nexora-frontend
+  newTag: sha-11135a20d6ad
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
