@@ -1,15 +1,21 @@
 namespace: nexora-api
 
 resources:
-  - ../../../_base/workloads/api
-  - external-secrets.yaml
-  - ingress.yaml
+- ../../../_base/workloads/api
+- external-secrets.yaml
+- ingress.yaml
 
 patches:
-  - path: deployment-patch.yaml
+- path: deployment-patch.yaml
 
 images:
-  - name: ghcr.io/nexoraua/nexora-api
-    newTag: bootstrap
-  - name: ghcr.io/nexoraua/nexora-migrator
-    newTag: bootstrap
+- digest: sha256:f7c47acce21f0b4083327d6aacce32e18641007a730cadda7896f83853b6d62a
+  name: ghcr.io/nexoraua/nexora-api
+  newName: ghcr.io/nexoraua/nexora-api
+  newTag: sha-0e2a8d81f44f
+- digest: sha256:91183e61ad8c84024582ac465ad77ed061e7eca5336f7b37d7cacbd7e94b832a
+  name: ghcr.io/nexoraua/nexora-migrator
+  newName: ghcr.io/nexoraua/nexora-migrator
+  newTag: sha-0e2a8d81f44f
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

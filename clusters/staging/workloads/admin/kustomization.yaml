@@ -1,13 +1,17 @@
 namespace: nexora-admin
 
 resources:
-  - ../../../_base/workloads/admin
-  - external-secrets.yaml
-  - ingress.yaml
+- ../../../_base/workloads/admin
+- external-secrets.yaml
+- ingress.yaml
 
 patches:
-  - path: deployment-patch.yaml
+- path: deployment-patch.yaml
 
 images:
-  - name: ghcr.io/nexoraua/nexora-admin
-    newTag: bootstrap
+- digest: sha256:3871cfc7a67b68140f66d5e8ae155b62a9edbc9887a726987427f77a44eddb11
+  name: ghcr.io/nexoraua/nexora-admin
+  newName: ghcr.io/nexoraua/nexora-admin
+  newTag: sha-0e2a8d81f44f
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
