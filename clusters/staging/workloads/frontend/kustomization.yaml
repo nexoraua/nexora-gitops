@@ -6,9 +6,9 @@ resources:
 - ingress.yaml
 
 images:
-- digest: sha256:970623a50ff8f084f050ff6cbd191bbf1f67789f4ade7fec052ebacf285cd8e0
+- digest: sha256:5ef31ca2f1a7ec1b3dc855f59595b1ca6137f95b5115a484b6af7d750bde0a3f
   name: ghcr.io/nexoraua/nexora-frontend
   newName: ghcr.io/nexoraua/nexora-frontend
-  newTag: sha-8538cbe636ed
+  newTag: sha-a75c6f7da6e6
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
