@@ -2,6 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nexora-api
+  annotations:
+    # Wave 2 so this Deployment rolls only after the wave-1 Sync hook
+    # (migration-job.yaml) finishes — guarantees schema is at the
+    # expected version before the new image starts.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: 1
   revisionHistoryLimit: 5

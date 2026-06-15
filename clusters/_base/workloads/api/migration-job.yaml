@@ -3,9 +3,17 @@ kind: Job
 metadata:
   name: nexora-api-migrate
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    # Sync (not PreSync) hook with wave 1 so that the SA + ESO-managed
+    # nexora-api-runtime Secret land in wave 0 (default) before this
+    # Job runs. Original PreSync wave 0 deadlocked: Argo refuses to
+    # create the SA until the PreSync hook completes, but the Job
+    # cannot create a pod without the SA — sync stuck for 11 days.
+    # `Sync` semantics: the hook runs as part of the Sync phase, AFTER
+    # ordinary resources in lower waves are healthy. Deployment ships
+    # in wave 2 so it rolls only after migrations succeed.
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 3600
