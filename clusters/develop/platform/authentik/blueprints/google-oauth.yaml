@@ -1,0 +1,74 @@
+# Authentik blueprint — registers Google as an OAuth Source and binds it
+# to the default authentication flow so the "Login with Google" button
+# appears on https://auth.develop.nxua.dev.
+#
+# This file is wrapped as a ConfigMap that the Authentik worker pod
+# mounts at /blueprints/custom/google-oauth/ (see apps/authentik.yaml
+# worker.extraVolumeMounts). Authentik scans /blueprints/ recursively
+# and auto-applies any file with blueprints.goauthentik.io/instantiate=true.
+#
+# Credentials (!Env tags below) come from authentik-google-oauth Secret
+# materialized by ESO from kv/nexora/develop/authentik/google-oauth —
+# see platform/secrets/authentik-google-oauth.yaml.
+#
+# Google Cloud Console setup (one-time, done by operator):
+#   1. Project "nexora-auth-develop" (or existing) → APIs & Services
+#   2. OAuth consent screen: External, app name "Nexora (develop)",
+#      authorized domain nxua.dev, scopes openid+email+profile
+#   3. Credentials → OAuth 2.0 Client ID, type Web application
+#   4. Authorized redirect URI:
+#         https://auth.develop.nxua.dev/source/oauth/callback/google/
+#      ↑ literal `/google/` — must match the slug below
+#   5. Copy Client ID + Client Secret → Vault:
+#         vault kv put kv/nexora/develop/authentik/google-oauth \
+#             client_id=<ID> client_secret=<SECRET>
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-google-oauth
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  google-oauth.yaml: |
+    version: 1
+    metadata:
+      name: nexora-google-oauth
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # 1) OAuth Source for Google — picks up client_id/client_secret
+      #    from worker pod's env (loaded via global.envFrom from the
+      #    authentik-google-oauth Secret).
+      - model: authentik_sources_oauth.oauthsource
+        id: google-source
+        identifiers:
+          slug: google
+        attrs:
+          name: Google
+          enabled: true
+          provider_type: google
+          # user_matching_mode email_link → if email already exists in
+          # Authentik, link to that user; else fall through to enrollment.
+          # On develop the first real user lands via enrollment (akadmin
+          # is the only pre-existing user with no Google identity).
+          user_matching_mode: email_link
+          consumer_key: !Env GOOGLE_OAUTH_CLIENT_ID
+          consumer_secret: !Env GOOGLE_OAUTH_CLIENT_SECRET
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+          enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+
+      # 2) Bind Google source to the identification stage of the default
+      #    authentication flow — this is what surfaces the "Login with
+      #    Google" button on the login screen.
+      #
+      #    Note: M2M `sources` field is REPLACED on apply, not appended.
+      #    On develop nothing else is currently bound, so listing only
+      #    google is correct. If staging/prod has other sources bound,
+      #    the blueprint must include all of them.
+      - model: authentik_stages_identification.identificationstage
+        identifiers:
+          name: default-authentication-identification
+        attrs:
+          sources:
+            - !KeyOf google-source

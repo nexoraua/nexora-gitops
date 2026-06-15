@@ -1,0 +1,37 @@
+# Authentik blueprints — ConfigMaps mounted into the worker pod at
+# /blueprints/custom/<name>/. Authentik scans that path recursively
+# at startup and auto-applies any YAML with the
+# blueprints.goauthentik.io/instantiate=true label.
+#
+# Sync-wave 1 puts this Application BEFORE the authentik Helm release
+# (wave 2 in apps/authentik.yaml), so ConfigMaps exist when the worker
+# pod boots and tries to mount them. The pod still self-heals if the
+# race loses (volume mount waits → pod retries → eventually succeeds),
+# but ordering avoids the unhealthy state.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-blueprints
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/develop/platform/authentik
+    directory:
+      # Recurse so blueprints/*.yaml are picked up. Root-level files in
+      # platform/authentik/ (none today) would also sync.
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

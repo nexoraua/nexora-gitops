@@ -19,6 +19,15 @@ spec:
           envFrom:
             - secretRef:
                 name: authentik-bootstrap
+            # Google OAuth client credentials — materialized by ESO from
+            # kv/nexora/develop/authentik/google-oauth. Referenced by the
+            # Google OAuth blueprint via !Env GOOGLE_OAUTH_CLIENT_ID /
+            # !Env GOOGLE_OAUTH_CLIENT_SECRET at blueprint-apply time.
+            # `optional: true` keeps Authentik bootable if the Vault path
+            # is briefly unseeded.
+            - secretRef:
+                name: authentik-google-oauth
+                optional: true
         authentik:
           error_reporting:
             enabled: false
@@ -61,6 +70,18 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
+          # Mount custom blueprints. Authentik worker scans /blueprints/
+          # recursively at startup and watches for changes; any YAML with
+          # blueprints.goauthentik.io/instantiate=true is auto-applied.
+          # See platform/authentik/blueprints/ for source files.
+          extraVolumes:
+            - name: blueprint-google-oauth
+              configMap:
+                name: authentik-blueprint-google-oauth
+          extraVolumeMounts:
+            - name: blueprint-google-oauth
+              mountPath: /blueprints/custom/google-oauth
+              readOnly: true
         postgresql:
           enabled: false   # provided by CloudNativePG (clusters/develop/stateful/authentik/)
         redis:

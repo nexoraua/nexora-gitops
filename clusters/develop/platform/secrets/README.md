@@ -196,7 +196,32 @@ Materialize: `alertmanager-config` (monitoring ns) — рендерить пов
 `alertmanager.yaml` і підмонтовується у VMAlertmanager через
 `configSecret: alertmanager-config`.
 
-### 13. GitHub image pull token (опційно, якщо private registry)
+### 13. Authentik Google OAuth source credentials
+
+Google OAuth Client ID + Secret для federation source у Authentik
+(показує "Login with Google" на `auth.develop.nxua.dev`). Креди
+створюються вручну у Google Cloud Console:
+
+1. Project + OAuth consent screen ("Nexora (develop)", domain `nxua.dev`,
+   scopes `openid`+`email`+`profile`)
+2. Credentials → OAuth 2.0 Client ID, type **Web application**
+3. Authorized redirect URI: `https://auth.develop.nxua.dev/source/oauth/callback/google/`
+   (літерально `/google/` у кінці — має match slug у blueprint)
+
+Seed у Vault:
+
+```bash
+vault kv put kv/nexora/develop/authentik/google-oauth \
+  client_id="<google-oauth-client-id>" \
+  client_secret="<google-oauth-client-secret>"
+```
+
+Materialize: `authentik-google-oauth` (authentik ns) — споживається
+Authentik worker pod через `global.envFrom` (`apps/authentik.yaml`);
+blueprint `platform/authentik/blueprints/google-oauth.yaml` посилається
+на `!Env GOOGLE_OAUTH_CLIENT_ID/SECRET` під час apply.
+
+### 14. GitHub image pull token (опційно, якщо private registry)
 
 ```bash
 docker_config=$(echo -n '{"auths":{"ghcr.io":{"username":"nexora-ci","password":"'$GH_PAT'","auth":"'$(echo -n nexora-ci:$GH_PAT | base64)'"}}}' | base64 -w 0)
@@ -223,5 +248,6 @@ image (на старті Nexora образи публічні / Hetzner registry
 - [ ] `kv/nexora/develop/vault-oidc` (тільки після того, як Authentik
       blueprint згенерував provider).
 - [ ] `kv/nexora/develop/alerts/telegram` записаний.
+- [ ] `kv/nexora/develop/authentik/google-oauth` записаний (після створення OAuth Client ID у Google Cloud Console).
 - [ ] Hetzner Object Storage buckets `nexora-develop-cnpg-backups`,
       `nexora-develop-loki`, `nexora-develop-tempo` створено.
