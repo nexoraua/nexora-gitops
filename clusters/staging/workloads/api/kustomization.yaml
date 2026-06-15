@@ -9,13 +9,13 @@ patches:
 - path: deployment-patch.yaml
 
 images:
-- digest: sha256:da4192e49575dca028db4fa533f1cd5a5f5e8217f5b6897f8f309de3d981768d
+- digest: sha256:c8e651ebff21e08f43c7a31ed837eca50995c2c611b6e39968c6b97666505fbe
   name: ghcr.io/nexoraua/nexora-api
   newName: ghcr.io/nexoraua/nexora-api
-  newTag: sha-191181cb27ed
-- digest: sha256:eec4c41db4197db65647121b018f6247c8c44583cab6693a44ee05c121e8f861
+  newTag: sha-6e5398ba3bc5
+- digest: sha256:c0cd670a037d0d6e5b24e21879c18d3ba4bbcd0fcc215589156ce4f1331ee590
   name: ghcr.io/nexoraua/nexora-migrator
   newName: ghcr.io/nexoraua/nexora-migrator
-  newTag: sha-191181cb27ed
+  newTag: sha-6e5398ba3bc5
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

@@ -9,9 +9,9 @@ patches:
 - path: deployment-patch.yaml
 
 images:
-- digest: sha256:546394d04266ef25450001db864a34bd0764f253070b173ad0117690e36305e9
+- digest: sha256:ddfb5381db34b611b6422842f20741ff4a2451bad5ba0f56fea7d779c5f722c0
   name: ghcr.io/nexoraua/nexora-admin
   newName: ghcr.io/nexoraua/nexora-admin
-  newTag: sha-191181cb27ed
+  newTag: sha-6e5398ba3bc5
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
