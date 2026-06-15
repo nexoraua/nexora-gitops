@@ -1,0 +1,72 @@
+# Authentik blueprint — wires the `groups` claim into the ArgoCD OIDC
+# provider so ArgoCD's argocd-rbac-cm can map Authentik groups (created
+# by argocd-rbac.yaml) onto ArgoCD roles via policy.csv.
+#
+# Authentik 2024.10.5 does NOT ship a built-in OpenID 'groups' scope
+# mapping (verified — default scope set is openid/email/profile/
+# offline_access/ak_proxy/goauthentik.io/api). Entry (1) creates it
+# under the conventional managed key so future Authentik upgrades that
+# add a built-in won't double-create.
+#
+# Entry (2) binds the new scope onto the existing `argocd` oauth2
+# provider. The provider was created via the Authentik UI long before
+# this gitops repo; identified by stable client_id (NOT name, which
+# could be renamed in the UI without us noticing).
+#
+# CRITICAL: `property_mappings` is M2M, REPLACED on apply (same caveat
+# as google-oauth.yaml's identification-stage `sources` field). The list
+# below is the FULL set of scopes the argocd provider must have —
+# openid, email, profile (the current three, re-listed verbatim) PLUS
+# the new groups mapping. Adding/removing scopes in future MUST keep
+# all four (or whatever the complete set is at that moment); dropping
+# any will silently revoke that scope.
+#
+# After this blueprint applies, the ArgoCD ID token will carry a
+# `groups: ["argocd-admin", ...]` claim for users assigned to those
+# groups by argocd-rbac.yaml. ArgoCD itself still ignores the claim
+# until the terraform-managed chart values (platform.tf) get the
+# matching `requestedScopes` + `policy.csv` change — that is the
+# final, lock-out-risky commit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-argocd-oidc
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  argocd-oidc.yaml: |
+    version: 1
+    metadata:
+      name: nexora-argocd-oidc
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # 1) Create the OpenID `groups` scope mapping. Expression returns
+      #    the user's Authentik group names as a JSON array; the OIDC
+      #    layer attaches it as a `groups` claim on the ID token.
+      - model: authentik_providers_oauth2.scopemapping
+        id: scope-openid-groups
+        identifiers:
+          managed: goauthentik.io/providers/oauth2/scope-openid-groups
+        attrs:
+          name: "authentik default OAuth Mapping: OpenID 'groups'"
+          scope_name: groups
+          description: "Add 'groups' claim listing the user's Authentik groups (Nexora-managed; Authentik 2024.10.5 does not ship a default)."
+          expression: |
+            return {
+                "groups": [group.name for group in request.user.ak_groups.all()],
+            }
+
+      # 2) Bind openid + email + profile + groups onto the argocd
+      #    provider. The first three re-list the current state verbatim
+      #    so the M2M REPLACE doesn't drop them.
+      - model: authentik_providers_oauth2.oauth2provider
+        identifiers:
+          client_id: a361e21ee244ed5a8851c1ff2e41c2a8
+        attrs:
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !KeyOf scope-openid-groups

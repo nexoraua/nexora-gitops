@@ -1,0 +1,77 @@
+# Authentik blueprint — provisions the ArgoCD RBAC groups consumed by
+# the argocd OAuth2 provider's `groups` claim. ArgoCD's argocd-rbac-cm
+# maps these group names to roles:
+#
+#   argocd-admin    -> role:admin    (full read/write across all apps)
+#   argocd-readonly -> role:readonly (get/list only, no sync/rollback)
+#
+# These are Authentik-side label groups only. `is_superuser: false`
+# keeps them from granting any Authentik admin — privileges flow
+# strictly via the OIDC `groups` scope into ArgoCD. Authentik admin
+# stays gated by the built-in `authentik Admins` group.
+#
+# Membership policy (develop):
+#   - mykola.dorofii is the current operator and is assigned to
+#     argocd-admin below. Enrolled via Google-OIDC against
+#     auth.develop.nxua.dev (see google-oauth.yaml).
+#   - akadmin is deliberately NOT in argocd-admin — break-glass account,
+#     must not appear in day-to-day OIDC group claims.
+#   - When the next human operator enrolls through Google-OIDC, append
+#     their username under the `users:` list on argocd-admin-group and
+#     commit.
+#
+# Companion changes (separate files, ordering matters — see PR):
+#   - argocd-oidc.yaml — adds the `groups` scope mapping AND binds it
+#     to the argocd OAuth2 provider so the ID token actually carries
+#     group membership.
+#   - clusters/develop/apps/authentik.yaml — lists both ConfigMaps
+#     under blueprints.configMaps so the Authentik chart mounts them.
+#   - nexora-infra/modules/hetzner-talos-cluster/platform.tf —
+#     extends ArgoCD requestedScopes with "groups" and replaces
+#     policy.default=role:admin with group-based policy.csv. Applied
+#     LAST, after these groups + scope are confirmed live and a fresh
+#     token shows the operator in argocd-admin.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-argocd-rbac
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  argocd-rbac.yaml: |
+    version: 1
+    metadata:
+      name: nexora-argocd-rbac
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # 1) ArgoCD administrators. Members get role:admin in ArgoCD via
+      #    the `groups` claim in the OIDC ID token.
+      - model: authentik_core.group
+        id: argocd-admin-group
+        identifiers:
+          name: argocd-admin
+        attrs:
+          is_superuser: false
+          # Membership lives on the group entry, not on the user entry —
+          # user records are owned by Authentik (created/updated by the
+          # Google-OIDC enrollment flow). Editing them from a blueprint
+          # would fight the OIDC source on every login over name/email.
+          # M2M `users` field is REPLACED on apply (same caveat as
+          # google-oauth.yaml's identification-stage `sources`), so any
+          # new operator MUST be appended to this list, not added
+          # out-of-band via the UI.
+          users:
+            - !Find [authentik_core.user, [username, mykola.dorofii]]
+
+      # 2) ArgoCD read-only viewers. Intentionally empty for now —
+      #    the group must exist so policy.csv in argocd-rbac-cm can
+      #    reference it without ordering problems. Add members by
+      #    appending !Find lines under `users:` mirroring entry (1).
+      - model: authentik_core.group
+        id: argocd-readonly-group
+        identifiers:
+          name: argocd-readonly
+        attrs:
+          is_superuser: false

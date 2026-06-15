@@ -37,6 +37,8 @@ spec:
         blueprints:
           configMaps:
             - authentik-blueprint-google-oauth
+            - authentik-blueprint-argocd-rbac
+            - authentik-blueprint-argocd-oidc
         authentik:
           error_reporting:
             enabled: false
