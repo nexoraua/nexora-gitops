@@ -73,12 +73,16 @@ spec:
               memory: 1Gi
         worker:
           replicas: 1
+          # Authentik worker hosts both the Celery worker AND the
+          # blueprint-apply path (which spins up the full Django app per
+          # task). 512Mi → OOMKill during blueprint apply / `ak shell`;
+          # 1Gi keeps headroom on top of the ~600Mi steady-state.
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
-            limits:
               memory: 512Mi
+            limits:
+              memory: 1Gi
         postgresql:
           enabled: false   # provided by CloudNativePG (clusters/develop/stateful/authentik/)
         redis:
