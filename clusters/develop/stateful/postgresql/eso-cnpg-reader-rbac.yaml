@@ -1,0 +1,62 @@
+# Cross-namespace RBAC for nexora-{admin,api} ESO SecretStores to read
+# the CNPG-managed `nexora-business-develop-app` Secret. Lives in the
+# stateful/postgresql/ tree (data AppProject) because:
+#
+#   - Argo apps/nexora-admin + apps/nexora-api belong to the `apps`
+#     AppProject which does NOT permit destinations: postgresql.
+#   - cnpg-business Application syncs this tree to the `data` AppProject
+#     which DOES include namespace postgresql.
+#
+# Each app has its own dedicated Role + RoleBinding granting GET on
+# JUST the one CNPG-managed Secret. The SAs live in their app
+# namespaces (created by workloads/{admin,api}/cnpg-secretstore.yaml).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eso-cnpg-reader-admin
+  namespace: postgresql
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["nexora-business-develop-app"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eso-cnpg-reader-admin
+  namespace: postgresql
+subjects:
+  - kind: ServiceAccount
+    name: eso-cnpg-reader
+    namespace: nexora-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eso-cnpg-reader-admin
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eso-cnpg-reader-api
+  namespace: postgresql
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["nexora-business-develop-app"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eso-cnpg-reader-api
+  namespace: postgresql
+subjects:
+  - kind: ServiceAccount
+    name: eso-cnpg-reader
+    namespace: nexora-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eso-cnpg-reader-api
