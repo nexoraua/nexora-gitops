@@ -1,0 +1,61 @@
+# Authentik blueprint — provisions the Grafana RBAC groups consumed by
+# Grafana's OIDC `groups` claim. role_attribute_path JMESPath (see
+# apps/grafana.yaml) maps these group names to Grafana org roles:
+#
+#   grafana-admin  -> Admin
+#   grafana-editor -> Editor
+#   grafana-viewer -> Viewer
+#
+# is_superuser: false on all three — pure label groups.
+#
+# Membership policy (staging):
+#   Empty by default. After the operator enrolls via Google-OIDC on
+#   auth.staging.nxua.dev, append:
+#       users:
+#         - !Find [authentik_core.user, [username, mykola.dorofii]]
+#   under the desired group (admin/editor/viewer), commit, OR add via
+#   Authentik UI.
+#
+# The local Grafana `admin` account (grafana-admin Secret, password in
+# Vault kv/nexora/staging/grafana/admin) is break-glass and bypasses
+# OIDC — DO NOT add it to these groups.
+#
+# grafana.yaml on staging keeps the original `role_attribute_path:
+# "'Admin'"` until at least one operator is in a grafana-* group; once
+# that's true, swap to the JMESPath that consults groups (mirror
+# develop).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-grafana-rbac
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  grafana-rbac.yaml: |
+    version: 1
+    metadata:
+      name: nexora-grafana-rbac
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        id: grafana-admin-group
+        identifiers:
+          name: grafana-admin
+        attrs:
+          is_superuser: false
+
+      - model: authentik_core.group
+        id: grafana-editor-group
+        identifiers:
+          name: grafana-editor
+        attrs:
+          is_superuser: false
+
+      - model: authentik_core.group
+        id: grafana-viewer-group
+        identifiers:
+          name: grafana-viewer
+        attrs:
+          is_superuser: false

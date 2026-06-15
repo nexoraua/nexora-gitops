@@ -1,0 +1,33 @@
+# Authentik blueprint manifests (ConfigMaps mounted into the Authentik
+# server + worker pods at /blueprints/mounted/cm-<name>/). Without this
+# Application the blueprint files under
+# clusters/production/platform/authentik/blueprints/ are orphaned —
+# the goauthentik chart never sees them and the argocd/grafana RBAC
+# groups are never created.
+#
+# Sync wave 3: after Authentik itself (wave 2) is up so the server pod
+# picks up the ConfigMap on its next reconcile / restart, and before
+# any downstream apps that depend on the OIDC provider scopes (vault,
+# etc.).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-blueprints
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/nexoraua/nexora-gitops.git
+    targetRevision: main
+    path: clusters/production/platform/authentik/blueprints
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

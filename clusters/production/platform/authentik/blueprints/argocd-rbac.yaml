@@ -1,0 +1,55 @@
+# Authentik blueprint — provisions the ArgoCD RBAC groups consumed by
+# the argocd OAuth2 provider's `groups` claim. ArgoCD's argocd-rbac-cm
+# maps these group names to roles:
+#
+#   argocd-admin    -> role:admin    (full read/write across all apps)
+#   argocd-readonly -> role:readonly (get/list only, no sync/rollback)
+#
+# Pure label groups (is_superuser: false). Authentik admin stays gated
+# by the built-in `authentik Admins` group — DO NOT confuse the two.
+#
+# Membership policy (production):
+#   Empty by default — operator users do not exist on production
+#   Authentik until they enroll via Google-OIDC against auth.nxua.dev
+#   (no google-oauth blueprint yet on production). When the first
+#   operator enrolls, append:
+#       users:
+#         - !Find [authentik_core.user, [username, mykola.dorofii]]
+#   under the argocd-admin-group entry and commit, OR add via
+#   Authentik UI.
+#
+# IMPORTANT: production carries real workloads. Do NOT flip the
+# Terraform-managed argocd-rbac-cm policy.default from "role:admin"
+# to "" until (a) at least two operators are in argocd-admin (for
+# 4-eyes break-glass), and (b) the relogin gate proved `groups` claim
+# is reaching argocd-server. See develop history for the procedure.
+# Until then SSO users continue to get wildcard admin — but Google
+# enrollment is the gatekeeper and akadmin is break-glass only.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-argocd-rbac
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  argocd-rbac.yaml: |
+    version: 1
+    metadata:
+      name: nexora-argocd-rbac
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        id: argocd-admin-group
+        identifiers:
+          name: argocd-admin
+        attrs:
+          is_superuser: false
+
+      - model: authentik_core.group
+        id: argocd-readonly-group
+        identifiers:
+          name: argocd-readonly
+        attrs:
+          is_superuser: false

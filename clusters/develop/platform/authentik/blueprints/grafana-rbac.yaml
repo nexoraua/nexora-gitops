@@ -1,0 +1,67 @@
+# Authentik blueprint — provisions the Grafana RBAC groups consumed by
+# Grafana's OIDC `groups` claim. Grafana's role_attribute_path JMESPath
+# (see clusters/develop/apps/grafana.yaml) maps these group names to
+# the three built-in Grafana org roles:
+#
+#   grafana-admin  -> Admin   (org admin: edit users/teams, all dashboards)
+#   grafana-editor -> Editor  (create/edit/save dashboards, no user mgmt)
+#   grafana-viewer -> Viewer  (read-only dashboards)
+#
+# All three are `is_superuser: false` — pure label groups for the OIDC
+# `groups` claim, no Authentik admin privilege.
+#
+# Membership policy (develop):
+#   - mykola.dorofii is the current operator → grafana-admin.
+#   - grafana-editor / grafana-viewer are empty placeholders so
+#     role_attribute_path can reference them without ordering problems.
+#   - The local `admin` user (grafana-admin Secret, password in Vault
+#     kv/nexora/develop/grafana/admin) is the break-glass and bypasses
+#     OIDC entirely — DO NOT add it to these groups.
+#
+# Companion changes:
+#   - grafana-oidc.yaml — adds `groups` to the grafana OAuth2 provider.
+#   - apps/authentik.yaml — mounts these ConfigMaps as blueprints.
+#   - apps/grafana.yaml — adds `groups` to OIDC scopes and switches
+#     role_attribute_path from `'Admin'` to the JMESPath that consults
+#     the groups claim.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-grafana-rbac
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  grafana-rbac.yaml: |
+    version: 1
+    metadata:
+      name: nexora-grafana-rbac
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        id: grafana-admin-group
+        identifiers:
+          name: grafana-admin
+        attrs:
+          is_superuser: false
+          # Members live on the group entry (not on the user entry) —
+          # same rationale as argocd-rbac.yaml: user records are owned
+          # by the Google-OIDC enrollment flow. M2M `users` REPLACE on
+          # apply, so new operators MUST be added here, not via UI.
+          users:
+            - !Find [authentik_core.user, [username, mykola.dorofii]]
+
+      - model: authentik_core.group
+        id: grafana-editor-group
+        identifiers:
+          name: grafana-editor
+        attrs:
+          is_superuser: false
+
+      - model: authentik_core.group
+        id: grafana-viewer-group
+        identifiers:
+          name: grafana-viewer
+        attrs:
+          is_superuser: false

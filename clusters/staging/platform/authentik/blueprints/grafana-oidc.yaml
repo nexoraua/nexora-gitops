@@ -1,0 +1,38 @@
+# Authentik blueprint — wires the `groups` claim into the Grafana OIDC
+# provider so Grafana's role_attribute_path JMESPath can map Authentik
+# groups (created by grafana-rbac.yaml) onto Grafana roles.
+#
+# The OpenID `groups` scope mapping itself is created by argocd-oidc.yaml
+# (same managed key `goauthentik.io/providers/oauth2/scope-openid-groups`
+# — Authentik dedupes by `managed`, so applying both blueprints is
+# idempotent). This blueprint only attaches it to the grafana provider.
+#
+# CRITICAL: `property_mappings` is M2M, REPLACED on apply. Full list:
+# openid, email, profile (current three) + groups. Dropping any
+# silently revokes that scope.
+#
+# Provider lookup by `name: grafana` so this blueprint is portable.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-grafana-oidc
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  grafana-oidc.yaml: |
+    version: 1
+    metadata:
+      name: nexora-grafana-oidc
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        identifiers:
+          name: grafana
+        attrs:
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid-groups]]

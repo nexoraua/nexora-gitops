@@ -51,16 +51,20 @@ spec:
             allow_sign_up: true
             client_id: $__file{/etc/grafana/secrets/oidc-client-id}
             client_secret: $__file{/etc/grafana/secrets/oidc-client-secret}
-            scopes: openid profile email
+            # `groups` scope is requested now that the Authentik
+            # grafana provider binds the openid-groups mapping
+            # (platform/authentik/blueprints/grafana-oidc.yaml). The
+            # ID token will carry a `groups` array; role_attribute_path
+            # still ignores it until at least one operator is in a
+            # grafana-* Authentik group (currently empty — see
+            # platform/authentik/blueprints/grafana-rbac.yaml). Once
+            # that's true, swap role_attribute_path to the JMESPath
+            # variant used on develop and set role_attribute_strict.
+            scopes: openid profile email groups
             auth_url: https://auth.staging.nxua.dev/application/o/authorize/
             token_url: https://auth.staging.nxua.dev/application/o/token/
             api_url: https://auth.staging.nxua.dev/application/o/userinfo/
-            # Authentik doesn't emit a groups claim by default — until a
-            # groups property mapping is added, every OIDC sign-in maps
-            # to the role hard-coded below. Staging defaults to Viewer
-            # so a leaked OIDC session can't take admin actions; promote
-            # individuals to Editor/Admin manually until the groups
-            # mapping ships.
+            # Default Viewer until groups-based mapping cuts over.
             role_attribute_path: "'Viewer'"
         datasources:
           datasources.yaml:

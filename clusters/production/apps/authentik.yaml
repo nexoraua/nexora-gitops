@@ -21,6 +21,28 @@ spec:
           envFrom:
             - secretRef:
                 name: authentik-bootstrap
+        # Native blueprint loader (ROOT-level chart value, NOT under
+        # `authentik:` block — that block is reserved for AUTHENTIK_*
+        # env vars). Chart auto-mounts these ConfigMaps at
+        # /blueprints/mounted/cm-<name>/ on both server and worker;
+        # Authentik scans /blueprints/ recursively and applies any YAML
+        # with blueprints.goauthentik.io/instantiate=true.
+        #
+        # Production mirrors develop's argocd + grafana RBAC scaffolding
+        # — see clusters/production/platform/authentik/blueprints/.
+        # Member lists are empty until operators enroll via Google-OIDC
+        # on auth.nxua.dev; Terraform-managed argocd/grafana RBAC keep
+        # wildcard-admin and Viewer defaults respectively so no lock-
+        # out occurs in the interim. Production carries real workloads
+        # — do NOT flip these defaults until at least two operators are
+        # in argocd-admin (for 4-eyes break-glass) AND the relogin gate
+        # proves the `groups` claim is reaching downstream services.
+        blueprints:
+          configMaps:
+            - authentik-blueprint-argocd-rbac
+            - authentik-blueprint-argocd-oidc
+            - authentik-blueprint-grafana-rbac
+            - authentik-blueprint-grafana-oidc
         authentik:
           error_reporting:
             enabled: false

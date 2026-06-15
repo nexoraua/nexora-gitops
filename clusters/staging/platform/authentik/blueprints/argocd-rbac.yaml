@@ -1,0 +1,55 @@
+# Authentik blueprint — provisions the ArgoCD RBAC groups consumed by
+# the argocd OAuth2 provider's `groups` claim. ArgoCD's argocd-rbac-cm
+# maps these group names to roles:
+#
+#   argocd-admin    -> role:admin    (full read/write across all apps)
+#   argocd-readonly -> role:readonly (get/list only, no sync/rollback)
+#
+# Pure label groups consumed only by the OIDC `groups` claim
+# (is_superuser: false) — no Authentik admin granted.
+#
+# Membership policy (staging):
+#   Empty by default — the operator user has not yet enrolled via
+#   Google-OIDC on this cluster (no google-oauth blueprint yet on
+#   staging). When the operator first logs into auth.staging.nxua.dev
+#   their `mykola.dorofii` user gets created by the enrollment flow;
+#   THEN append:
+#       users:
+#         - !Find [authentik_core.user, [username, mykola.dorofii]]
+#   under the argocd-admin-group entry and commit, OR add via
+#   Authentik UI (Directory → Groups → argocd-admin → Users).
+#
+# The Terraform-managed argocd-rbac-cm on staging keeps
+# policy.default = "role:admin" until at least one operator is in
+# argocd-admin AND the relogin gate (groups claim arrives) passes
+# (see develop history for the procedure). Until then SSO users
+# continue to get wildcard admin — no lock-out risk from this
+# blueprint alone.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-argocd-rbac
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  argocd-rbac.yaml: |
+    version: 1
+    metadata:
+      name: nexora-argocd-rbac
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        id: argocd-admin-group
+        identifiers:
+          name: argocd-admin
+        attrs:
+          is_superuser: false
+
+      - model: authentik_core.group
+        id: argocd-readonly-group
+        identifiers:
+          name: argocd-readonly
+        attrs:
+          is_superuser: false

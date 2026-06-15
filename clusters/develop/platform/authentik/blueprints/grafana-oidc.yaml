@@ -1,0 +1,45 @@
+# Authentik blueprint — wires the `groups` claim into the Grafana OIDC
+# provider so Grafana's role_attribute_path JMESPath (see apps/
+# grafana.yaml grafana.ini) can map Authentik groups (created by
+# grafana-rbac.yaml) onto Grafana roles.
+#
+# The OpenID `groups` scope mapping itself is created by argocd-oidc.yaml
+# (same managed key `goauthentik.io/providers/oauth2/scope-openid-groups`
+# — Authentik dedupes by `managed`, so applying both blueprints is
+# idempotent). This blueprint only attaches it to the grafana provider.
+#
+# CRITICAL: `property_mappings` is M2M, REPLACED on apply. The list
+# below MUST be the full set of scopes the grafana provider should
+# have — openid, email, profile (current three) + groups. Dropping any
+# silently revokes that scope.
+#
+# Provider lookup by `name: grafana` so this blueprint is portable
+# across develop/staging/production (client_id differs per env).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprint-grafana-oidc
+  namespace: authentik
+  labels:
+    app.kubernetes.io/instance: authentik
+data:
+  grafana-oidc.yaml: |
+    version: 1
+    metadata:
+      name: nexora-grafana-oidc
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # Bind openid + email + profile + groups onto the grafana
+      # provider. First three re-list current state verbatim so the
+      # M2M REPLACE doesn't drop them. Groups mapping is the same
+      # one created by argocd-oidc.yaml (managed key dedupes).
+      - model: authentik_providers_oauth2.oauth2provider
+        identifiers:
+          name: grafana
+        attrs:
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid-groups]]

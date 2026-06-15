@@ -3,19 +3,15 @@
 # by argocd-rbac.yaml) onto ArgoCD roles via policy.csv.
 #
 # Authentik 2024.10.5 does NOT ship a built-in OpenID 'groups' scope
-# mapping (verified — default scope set is openid/email/profile/
-# offline_access/ak_proxy/goauthentik.io/api). Entry (1) creates it
-# under the conventional managed key so future Authentik upgrades that
-# add a built-in won't double-create.
+# mapping. Entry (1) creates it under the conventional managed key so
+# future Authentik upgrades that add a built-in won't double-create.
 #
 # Entry (2) binds the new scope onto the existing `argocd` oauth2
-# provider. The provider was created via the Authentik UI long before
-# this gitops repo; identified by `name: argocd` so the same blueprint
-# is portable across develop/staging/production (each env's Authentik
+# provider. Identified by `name: argocd` so the same blueprint is
+# portable across develop/staging/production (each env's Authentik
 # has a different client_id but the same provider name).
 #
-# CRITICAL: `property_mappings` is M2M, REPLACED on apply (same caveat
-# as google-oauth.yaml's identification-stage `sources` field). The list
+# CRITICAL: `property_mappings` is M2M, REPLACED on apply. The list
 # below is the FULL set of scopes the argocd provider must have —
 # openid, email, profile (the current three, re-listed verbatim) PLUS
 # the new groups mapping. Adding/removing scopes in future MUST keep
@@ -23,11 +19,11 @@
 # any will silently revoke that scope.
 #
 # After this blueprint applies, the ArgoCD ID token will carry a
-# `groups: ["argocd-admin", ...]` claim for users assigned to those
-# groups by argocd-rbac.yaml. ArgoCD itself still ignores the claim
-# until the terraform-managed chart values (platform.tf) get the
-# matching `requestedScopes` + `policy.csv` change — that is the
-# final, lock-out-risky commit.
+# `groups: [...]` claim. ArgoCD itself ignores the claim until the
+# terraform-managed chart values (nexora-infra environments/staging/
+# main.tf) get the matching `requestedScopes` change — staging opts
+# in to the extra scope but keeps policy.default = role:admin so no
+# lock-out occurs while operator memberships are still empty.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -43,9 +39,6 @@ data:
       labels:
         blueprints.goauthentik.io/instantiate: "true"
     entries:
-      # 1) Create the OpenID `groups` scope mapping. Expression returns
-      #    the user's Authentik group names as a JSON array; the OIDC
-      #    layer attaches it as a `groups` claim on the ID token.
       - model: authentik_providers_oauth2.scopemapping
         id: scope-openid-groups
         identifiers:
@@ -59,9 +52,6 @@ data:
                 "groups": [group.name for group in request.user.ak_groups.all()],
             }
 
-      # 2) Bind openid + email + profile + groups onto the argocd
-      #    provider. The first three re-list the current state verbatim
-      #    so the M2M REPLACE doesn't drop them.
       - model: authentik_providers_oauth2.oauth2provider
         identifiers:
           name: argocd

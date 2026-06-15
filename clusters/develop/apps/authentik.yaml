@@ -39,6 +39,8 @@ spec:
             - authentik-blueprint-google-oauth
             - authentik-blueprint-argocd-rbac
             - authentik-blueprint-argocd-oidc
+            - authentik-blueprint-grafana-rbac
+            - authentik-blueprint-grafana-oidc
         authentik:
           error_reporting:
             enabled: false
