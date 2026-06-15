@@ -221,6 +221,14 @@ Authentik worker pod через `global.envFrom` (`apps/authentik.yaml`);
 blueprint `platform/authentik/blueprints/google-oauth.yaml` посилається
 на `!Env GOOGLE_OAUTH_CLIENT_ID/SECRET` під час apply.
 
+> **Egress dependency:** OAuth Source `provider_type=google` валідується
+> через discovery doc (`accounts.google.com/.well-known/openid-configuration`)
+> і fetch-ить JWKS/userinfo. Allowlist цих FQDN-ів у
+> `platform/network-policies/platform-egress-deny.yaml` (блок
+> `authentik/egress-allowlist`): `accounts.google.com`,
+> `oauth2.googleapis.com`, `www.googleapis.com`. Без цього apply падає
+> у `Network is unreachable` і `BlueprintInstance.status = error`.
+
 ### 14. GitHub image pull token (опційно, якщо private registry)
 
 ```bash
