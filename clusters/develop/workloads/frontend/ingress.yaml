@@ -6,7 +6,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`dev.nexora.in.ua`) && PathPrefix(`/`)
+    - match: Host(`app.develop.nxua.dev`) && PathPrefix(`/`)
       kind: Rule
       priority: 1
       middlewares:
@@ -26,8 +26,8 @@ spec:
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
-  commonName: dev.nexora.in.ua
+  commonName: app.develop.nxua.dev
   dnsNames:
-    - dev.nexora.in.ua
+    - app.develop.nxua.dev
   duration: 2160h
   renewBefore: 360h

@@ -6,7 +6,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`admin-dev.nexora.in.ua`)
+    - match: Host(`admin.develop.nxua.dev`)
       kind: Rule
       middlewares:
         - name: cloudflare-jwt-assertion
@@ -27,8 +27,8 @@ spec:
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
-  commonName: admin-dev.nexora.in.ua
+  commonName: admin.develop.nxua.dev
   dnsNames:
-    - admin-dev.nexora.in.ua
+    - admin.develop.nxua.dev
   duration: 2160h
   renewBefore: 360h

@@ -6,11 +6,14 @@ spec:
   entryPoints:
     - websecure
   routes:
-    # API surface: /api/* (business endpoints), /openapi/* (spec JSON),
-    # /scalar/* (interactive UI). The non-/api prefixes are exposed in
-    # develop + staging only — Production drops them at the app layer
-    # (Program.cs gates MapOpenApi + MapScalarApiReference on !IsProduction).
-    - match: Host(`dev.nexora.in.ua`) && (PathPrefix(`/api`) || PathPrefix(`/openapi`) || PathPrefix(`/scalar`))
+    # API surface lives on api.develop.nxua.dev:
+    #   /api/*     — business endpoints
+    #   /openapi/* — JSON spec
+    #   /scalar/*  — interactive UI
+    # The non-/api prefixes are exposed in develop + staging only;
+    # Production drops them at the app layer (Program.cs gates
+    # MapOpenApi + MapScalarApiReference on !IsProduction).
+    - match: Host(`api.develop.nxua.dev`) && (PathPrefix(`/api`) || PathPrefix(`/openapi`) || PathPrefix(`/scalar`))
       kind: Rule
       priority: 100
       services:
@@ -28,8 +31,8 @@ spec:
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
-  commonName: dev.nexora.in.ua
+  commonName: api.develop.nxua.dev
   dnsNames:
-    - dev.nexora.in.ua
+    - api.develop.nxua.dev
   duration: 2160h
   renewBefore: 360h

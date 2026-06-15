@@ -5,6 +5,9 @@ resources:
   - external-secrets.yaml
   - ingress.yaml
 
+patches:
+  - path: deployment-patch.yaml
+
 images:
   - name: ghcr.io/nexoraua/nexora-api
     newTag: bootstrap
