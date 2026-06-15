@@ -28,16 +28,18 @@ spec:
             - secretRef:
                 name: authentik-google-oauth
                 optional: true
+        # Native blueprint loader (ROOT-level chart value, NOT under
+        # `authentik:` block — that block is reserved for AUTHENTIK_*
+        # env vars). Chart auto-mounts these ConfigMaps at
+        # /blueprints/mounted/cm-<name>/ on both server and worker;
+        # Authentik scans /blueprints/ recursively and applies any YAML
+        # with blueprints.goauthentik.io/instantiate=true.
+        blueprints:
+          configMaps:
+            - authentik-blueprint-google-oauth
         authentik:
           error_reporting:
             enabled: false
-          # Native blueprint loader: chart auto-mounts these ConfigMaps
-          # at /blueprints/<configMap-name>/ on BOTH server and worker.
-          # Authentik scans /blueprints/ recursively; any YAML inside
-          # with blueprints.goauthentik.io/instantiate=true is applied.
-          blueprints:
-            configMaps:
-              - authentik-blueprint-google-oauth
           postgresql:
             host: nexora-authentik-develop-rw.authentik.svc
             name: authentik
