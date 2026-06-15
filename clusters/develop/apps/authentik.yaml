@@ -31,6 +31,13 @@ spec:
         authentik:
           error_reporting:
             enabled: false
+          # Native blueprint loader: chart auto-mounts these ConfigMaps
+          # at /blueprints/<configMap-name>/ on BOTH server and worker.
+          # Authentik scans /blueprints/ recursively; any YAML inside
+          # with blueprints.goauthentik.io/instantiate=true is applied.
+          blueprints:
+            configMaps:
+              - authentik-blueprint-google-oauth
           postgresql:
             host: nexora-authentik-develop-rw.authentik.svc
             name: authentik
@@ -70,18 +77,6 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
-          # Mount custom blueprints. Authentik worker scans /blueprints/
-          # recursively at startup and watches for changes; any YAML with
-          # blueprints.goauthentik.io/instantiate=true is auto-applied.
-          # See platform/authentik/blueprints/ for source files.
-          extraVolumes:
-            - name: blueprint-google-oauth
-              configMap:
-                name: authentik-blueprint-google-oauth
-          extraVolumeMounts:
-            - name: blueprint-google-oauth
-              mountPath: /blueprints/custom/google-oauth
-              readOnly: true
         postgresql:
           enabled: false   # provided by CloudNativePG (clusters/develop/stateful/authentik/)
         redis:
