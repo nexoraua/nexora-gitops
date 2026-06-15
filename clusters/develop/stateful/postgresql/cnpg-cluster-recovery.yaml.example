@@ -1,0 +1,169 @@
+# PITR / DR recovery template for nexora-business-develop. To restore:
+#
+#   1. Stop ArgoCD sync for the postgresql Application so live + recovery
+#      don't fight:
+#        kubectl -n argocd patch app cnpg-business --type merge \
+#          -p '{"spec":{"syncPolicy":null}}'
+#
+#   2. Delete the broken Cluster (KEEPS the PVCs by default — protective).
+#      Confirm via:
+#        kubectl -n postgresql get cluster nexora-business-develop -o yaml \
+#          | yq '.spec.bootstrap'
+#      Then:
+#        kubectl -n postgresql delete cluster nexora-business-develop
+#
+#   3. Copy this file to a real path (NOT .example) and fill in:
+#        - SOURCE_BACKUP_NAME — the most recent successful backup in the
+#          OS bucket. Find it with:
+#            kubectl -n postgresql exec -it <some-cnpg-pod> -- \
+#              barman-cloud-backup-list s3://nexora-cnpg-backups-develop/ nexora-business-develop \
+#                --endpoint-url https://fsn1.your-objectstorage.com
+#          Latest backup_id looks like `20260615T030000`.
+#        - TARGET_TIME (optional) — RFC3339 timestamp to PITR to. If
+#          unset, restores to end-of-WAL of the source backup.
+#
+#   4. Apply:
+#        kubectl apply -f cnpg-cluster-recovery.yaml
+#
+#   5. Watch:
+#        kubectl -n postgresql get cluster nexora-business-develop -w
+#        kubectl -n postgresql logs -l cnpg.io/cluster=nexora-business-develop -c bootstrap-controller -f
+#      Expected sequence: WaitingForUser → Setting up primary →
+#      → Cluster in healthy state. ~5-15 min depending on DB size.
+#
+#   6. Verify marker rows (insert a known-value row BEFORE every drill):
+#        kubectl -n postgresql exec nexora-business-develop-1 -- psql -d nexora -c \
+#          "SELECT * FROM ops.recovery_marker ORDER BY inserted_at DESC LIMIT 5;"
+#
+#   7. If verification passes, swap the original cnpg-cluster.yaml back
+#      into git (REMOVE bootstrap.recovery), re-enable ArgoCD sync:
+#        kubectl -n argocd patch app cnpg-business --type merge \
+#          -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+#
+# Once recovery completes the cluster operates as the new primary; the
+# bootstrap.recovery block is consumed only on first start and ignored
+# thereafter.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-business-develop
+  namespace: postgresql
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-superuser
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  storage:
+    storageClass: linstor-r1
+    size: 20Gi
+  walStorage:
+    storageClass: linstor-r1
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "768MB"
+      work_mem: "16MB"
+      wal_level: "logical"
+      pg_stat_statements.track: "all"
+    pg_hba:
+      - host all all 10.40.0.0/16 scram-sha-256
+    shared_preload_libraries:
+      - pg_stat_statements
+      - pgaudit
+  monitoring:
+    enablePodMonitor: false
+  # ============================================================
+  # RECOVERY — discriminated union with initdb/pg_basebackup. The
+  # original cnpg-cluster.yaml has NO bootstrap block (defaults to
+  # initdb), so the live and recovery files differ only here + by
+  # the absence of the `backup` block (kept identical below so WAL
+  # archiving restarts immediately after recovery).
+  # ============================================================
+  bootstrap:
+    recovery:
+      source: nexora-business-develop-source
+      # Uncomment ONE of these blocks:
+      #
+      # (a) Latest available — restores to the END of WAL streamed
+      #     to the OS bucket. Use for "Vault PVC died, restore now"
+      #     scenarios with no specific time target.
+      # recoveryTarget: {}
+      #
+      # (b) Point-in-time recovery — restores to TARGET_TIME UTC.
+      #     Use for "we accidentally truncated a table at 14:32 UTC,
+      #     restore to 14:31:55".
+      # recoveryTarget:
+      #   targetTime: "TARGET_TIME"          # e.g. "2026-06-15 14:31:55+00"
+      #   targetInclusive: false             # stop BEFORE the WAL record at targetTime
+      #
+      # (c) Backup ID — restore to the consistent point of a specific
+      #     base backup. Use when WAL is corrupt past a known point.
+      # recoveryTarget:
+      #   backupID: "SOURCE_BACKUP_NAME"     # e.g. "20260615T030000"
+  externalClusters:
+    - name: nexora-business-develop-source
+      barmanObjectStore:
+        # Same bucket as live backup. After recovery, the new cluster's
+        # backupID space MUST not collide with old — CNPG handles this
+        # by generating a new server_name on bootstrap.recovery.
+        destinationPath: "s3://nexora-cnpg-backups-develop/"
+        endpointURL: "https://fsn1.your-objectstorage.com"
+        s3Credentials:
+          accessKeyId:
+            name: cnpg-backup-s3
+            key: ACCESS_KEY_ID
+          secretAccessKey:
+            name: cnpg-backup-s3
+            key: SECRET_ACCESS_KEY
+        serverName: nexora-business-develop
+        wal:
+          compression: gzip
+          maxParallel: 2
+        data:
+          compression: gzip
+          jobs: 2
+  # Continuous backup config — same as cnpg-cluster.yaml so WAL
+  # archiving restarts the moment the recovered primary boots. KEEP
+  # this identical to the live manifest to avoid drift.
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-develop/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2

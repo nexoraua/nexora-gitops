@@ -9,6 +9,12 @@ resources:
 patches:
   - path: deployment-patch.yaml
 
+# Image tags managed by nexora-backend CI (ci.yml `deploy` job runs
+# `kustomize edit set image` on push). Bootstrapping with the same sha
+# staging is currently pinned to so a from-zero rebuild lands a
+# pullable image even before the first develop CI run.
 images:
   - name: ghcr.io/nexoraua/nexora-admin
-    newTag: bootstrap
+    newName: ghcr.io/nexoraua/nexora-admin
+    newTag: sha-051729f3da28
+    digest: sha256:8ad84bd9f664b6b5f38d1f94d10c6873a274701816c46bc68ccce314cb5861c6

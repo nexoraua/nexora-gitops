@@ -79,17 +79,20 @@ spec:
 
               echo "==> Define nexora-admin policy (admin app permission read)"
               vault policy write nexora-admin - <<'POLICY'
-              path "kv/data/nexora/admin/*"                  { capabilities = ["read","list"] }
-              path "transit/encrypt/nexora-pii-develop"      { capabilities = ["update"] }
-              path "transit/decrypt/nexora-pii-develop"      { capabilities = ["update"] }
+              path "kv/data/nexora/develop/apps/admin/*"       { capabilities = ["read","list"] }
+              path "kv/metadata/nexora/develop/apps/admin/*"   { capabilities = ["read","list"] }
+              path "kv/data/nexora/develop/oidc/nexora-admin"  { capabilities = ["read"] }
+              path "transit/encrypt/nexora-pii-develop"        { capabilities = ["update"] }
+              path "transit/decrypt/nexora-pii-develop"        { capabilities = ["update"] }
               POLICY
 
               echo "==> Define nexora-api policy (backend permission read)"
               vault policy write nexora-api - <<'POLICY'
-              path "kv/data/nexora/backend/*"                { capabilities = ["read","list"] }
-              path "transit/encrypt/nexora-pii-develop"      { capabilities = ["update"] }
-              path "transit/decrypt/nexora-pii-develop"      { capabilities = ["update"] }
-              path "transit/datakey/plaintext/nexora-pii-develop" { capabilities = ["update"] }
+              path "kv/data/nexora/develop/apps/api/*"             { capabilities = ["read","list"] }
+              path "kv/metadata/nexora/develop/apps/api/*"         { capabilities = ["read","list"] }
+              path "transit/encrypt/nexora-pii-develop"            { capabilities = ["update"] }
+              path "transit/decrypt/nexora-pii-develop"            { capabilities = ["update"] }
+              path "transit/datakey/plaintext/nexora-pii-develop"  { capabilities = ["update"] }
               POLICY
 
               echo "==> Map Authentik group infra-ops -> infra-admin policy"
@@ -140,8 +143,22 @@ spec:
 
               echo "==> Enable transit engine for envelope encryption"
               vault secrets enable -path=transit transit || true
-              vault write -f transit/keys/nexora-pii-develop type=aes256-gcm96
-              vault write -f transit/keys/nexora-backups-develop type=aes256-gcm96
+              # exportable=true is REQUIRED — without it,
+              # scripts/export-transit-keys.sh cannot save the key
+              # material off-cluster, and on Vault PVC loss the keys
+              # become unrecoverable (PII unreadable, CNPG backups
+              # undecryptable). allow_plaintext_backup permits
+              # `vault transit backup` for additional DR insurance.
+              # Both flags must be set at CREATE time and cannot be
+              # toggled afterwards.
+              vault write -f transit/keys/nexora-pii-develop \
+                type=aes256-gcm96 \
+                exportable=true \
+                allow_plaintext_backup=true
+              vault write -f transit/keys/nexora-backups-develop \
+                type=aes256-gcm96 \
+                exportable=true \
+                allow_plaintext_backup=true
 
               echo "==> Done"
 ---

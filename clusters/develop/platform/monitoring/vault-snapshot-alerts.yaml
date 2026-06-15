@@ -1,0 +1,96 @@
+# VictoriaMetrics rules for Vault raft snapshot freshness. The
+# `vault-raft-snapshot` CronJob runs every 6h; if no successful Job
+# completes within 12h we page (alerts/telegram per Alertmanager
+# routing). Two thresholds: warning at 12h, critical at 24h.
+#
+# Source metrics:
+#   kube_cronjob_status_last_successful_time{cronjob="vault-raft-snapshot",namespace="vault-system"}
+#     — emitted by kube-state-metrics; UNIX-seconds timestamp of the
+#     most recent successful Job from this CronJob.
+#   kube_job_status_failed{job_name=~"vault-raft-snapshot-.*"}
+#     — to catch consecutive Job failures even before the freshness
+#     window expires.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: vault-snapshot-freshness
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: vault
+    nexora.dev/severity: high
+spec:
+  groups:
+    - name: vault-snapshot
+      interval: 1m
+      rules:
+        - alert: VaultRaftSnapshotStale
+          expr: |
+            time() - max(kube_cronjob_status_last_successful_time{
+              namespace="vault-system",
+              cronjob="vault-raft-snapshot"
+            }) > 43200
+          for: 5m
+          labels:
+            severity: warning
+            service: vault
+            env: develop
+          annotations:
+            summary: "Vault raft snapshot older than 12h"
+            description: |
+              No successful vault-raft-snapshot Job has completed in the
+              last 12h. The 6h CronJob has skipped or failed at least
+              twice. DR window (RPO) is degraded.
+
+              Investigate:
+                kubectl -n vault-system get cronjob vault-raft-snapshot
+                kubectl -n vault-system get jobs -l app.kubernetes.io/name=vault-raft-snapshot
+                kubectl -n vault-system logs job/<latest> -c snapshot
+
+        - alert: VaultRaftSnapshotCritical
+          expr: |
+            time() - max(kube_cronjob_status_last_successful_time{
+              namespace="vault-system",
+              cronjob="vault-raft-snapshot"
+            }) > 86400
+          for: 5m
+          labels:
+            severity: critical
+            service: vault
+            env: develop
+          annotations:
+            summary: "Vault raft snapshot older than 24h — DR insurance gone"
+            description: |
+              No successful vault-raft-snapshot Job in the last 24h.
+              Vault PVCs are now the only copy of KV + Transit keys —
+              any PVC failure mode (Hetzner outage, accidental delete,
+              corruption) becomes unrecoverable data loss.
+
+              Treat as P1: fix snapshot pipeline immediately AND take a
+              manual snapshot off-cluster:
+                kubectl -n vault-system exec vault-0 -- \
+                  sh -c "VAULT_TOKEN=<root> vault operator raft snapshot save /tmp/manual.snap"
+                kubectl -n vault-system cp vault-0:/tmp/manual.snap ./manual.snap
+                # Then upload to nexora-vault-snapshots-develop manually.
+
+        - alert: VaultSnapshotCronJobMissing
+          expr: |
+            absent(kube_cronjob_info{
+              namespace="vault-system",
+              cronjob="vault-raft-snapshot"
+            })
+          for: 10m
+          labels:
+            severity: critical
+            service: vault
+            env: develop
+          annotations:
+            summary: "vault-raft-snapshot CronJob is missing entirely"
+            description: |
+              kube-state-metrics reports no CronJob named
+              vault-raft-snapshot in vault-system namespace. Either the
+              gitops sync removed it or kube-state-metrics is broken.
+              Without the CronJob there are NO snapshots being taken.
+
+              First check:
+                kubectl -n vault-system get cronjob
+                kubectl -n argocd get app vault -o jsonpath='{.status.sync.status}'

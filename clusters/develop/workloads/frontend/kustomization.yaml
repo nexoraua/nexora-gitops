@@ -5,6 +5,12 @@ resources:
   - external-secrets.yaml
   - ingress.yaml
 
+# Image tags managed by nexora-frontend CI (ci.yml `deploy` job runs
+# `kustomize edit set image` on push). Bootstrapping with the same sha
+# staging is currently pinned to so a from-zero rebuild lands a
+# pullable image even before the first develop CI run.
 images:
   - name: ghcr.io/nexoraua/nexora-frontend
-    newTag: bootstrap
+    newName: ghcr.io/nexoraua/nexora-frontend
+    newTag: sha-c1b6a1ab84c1
+    digest: sha256:ffde3347890efe1fd1b1444522f52ecf09d8adc81e487e07f11887d5bac371e9

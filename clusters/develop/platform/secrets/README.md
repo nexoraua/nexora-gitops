@@ -331,6 +331,142 @@ apply:
 > `vault kv put` + force-sync. Тримати active session на admin під час
 > rotation (новий secret підмінюється на льоту через ESO refresh).
 
+### 18. ArgoCD OIDC client_secret
+
+ArgoCD OAuth2 Provider `argocd` створено вручну через Authentik UI
+(client_id `a361e21ee244ed5a8851c1ff2e41c2a8` зафіксований у
+`argocd-oidc.yaml` blueprint, але provider сам існував раніше).
+ExternalSecret `clusters/develop/platform/secrets/argocd-oidc.yaml`
+очікує `client_id` + `client_secret` у Vault path:
+
+```bash
+vault kv put kv/nexora/develop/oidc/argocd \
+  client_id=<from-authentik-ui> \
+  client_secret=<from-authentik-ui>
+```
+
+Авто-extract: `nexora-infra/scripts/extract-oidc-from-authentik.sh`
+парсить Authentik DB і пише ці значення у
+`secrets/develop-oidc-clients.json`; потім
+`scripts/seed-vault-from-env.sh --only oidc` seed-ить у Vault.
+
+Force-sync після оновлення:
+```bash
+kubectl -n argocd annotate externalsecret argocd-oidc \
+  force-sync=$(date +%s) --overwrite
+```
+
+### 19. Grafana OIDC client_secret
+
+Аналогічно §18 для Grafana provider:
+
+```bash
+vault kv put kv/nexora/develop/oidc/grafana \
+  client_id=<from-authentik-ui> \
+  client_secret=<from-authentik-ui>
+
+kubectl -n monitoring annotate externalsecret grafana-oidc \
+  force-sync=$(date +%s) --overwrite
+```
+
+### 20. Tailscale subnet router OAuth credentials
+
+In-cluster Tailscale subnet router pod автентифікується через
+OAuth client (Tailscale Admin Console → Settings → OAuth clients →
+"Create OAuth client", scopes: `devices:write`, ACL tags: `tag:k8s`,
+`tag:nexora-develop`):
+
+```bash
+vault kv put kv/nexora/develop/tailscale \
+  client_id="<oauth-client-id>" \
+  client_secret="<oauth-client-secret>"
+```
+
+> **Не плутати** з `TAILSCALE_AUTH_KEY` (one-shot auth key для
+> bootstrap самого node-а — окремий механізм, не зберігається у Vault).
+>
+> **Rotation:** Tailscale Admin Console → OAuth clients → revoke old,
+> create new → `vault kv put` + force-sync subnet router pod (delete
+> pod → re-pull token).
+
+### 21. Vault Raft snapshot token + S3 credentials
+
+Vault snapshot CronJob (`platform/vault/snapshot-cronjob.yaml`)
+використовує periodic token + Hetzner OS bucket для off-cluster
+backup-ів.
+
+**Token creation** (after Vault is bootstrapped):
+
+```bash
+# Створи policy
+vault policy write vault-snapshot - <<EOF
+path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+EOF
+
+# Periodic token (TTL 30d, renewable, prefixed для розпізнавання)
+TOKEN=$(vault token create \
+  -policy=vault-snapshot \
+  -period=720h \
+  -display-name=vault-raft-snapshot-develop \
+  -format=json | jq -r .auth.client_token)
+
+vault kv put kv/nexora/develop/vault/snapshot-token token="$TOKEN"
+```
+
+**S3 credentials** (one Hetzner OS project key, also used by CNPG —
+acknowledged blast-radius gap):
+
+```bash
+vault kv put kv/nexora/develop/vault/snapshots-s3 \
+  ACCESS_KEY_ID="$HCLOUD_S3_ACCESS_KEY" \
+  SECRET_ACCESS_KEY="$HCLOUD_S3_SECRET_KEY"
+```
+
+**Bucket setup** (Hetzner Console — pre-create):
+- Name: `nexora-vault-snapshots-develop`
+- Lifecycle policy: 30d retention (delete objects older than 30d)
+- Optional: enable Object Lock GOVERNANCE for compliance (Hetzner
+  implementation is weak — див. ADR-I-0005)
+
+Перший snapshot після setup має зʼявитися протягом 6h (cron `0 */6 * * *`).
+Перевірка: `aws --endpoint-url https://fsn1.your-objectstorage.com s3 ls s3://nexora-vault-snapshots-develop/`.
+
+## .env-first workflow
+
+Усі секції вище можна виконати одним викликом замість manual `vault kv put` ланцюга:
+
+```bash
+# 1. Заповнити .env / .json файли у nexora-infra/secrets/ (див. secrets/README.md)
+# 2. Один pass для всіх секретів:
+cd /Users/mykoladorofii/workspace/nexora/nexora-infra
+scripts/seed-vault-from-env.sh --dry-run     # перевірити що буде
+scripts/seed-vault-from-env.sh               # apply
+scripts/verify-vault-vs-env.sh               # diff vault vs local
+```
+
+OIDC client_secret-и (§10, §17, §18, §19) — окремий flow після того
+як Authentik blueprint apply пройшов:
+
+```bash
+# Витягнути client_secret-и з Authentik DB у local JSON
+scripts/extract-oidc-from-authentik.sh
+# Seed у Vault
+scripts/seed-vault-from-env.sh --only oidc
+# Force-sync відповідні ExternalSecrets
+for ns_app in "argocd argocd-oidc" "monitoring grafana-oidc" "nexora-admin nexora-admin-runtime"; do
+  set -- $ns_app
+  kubectl -n "$1" annotate externalsecret "$2" force-sync=$(date +%s) --overwrite
+done
+```
+
+Transit keys (§22-imported during DR):
+
+```bash
+# Після того як oidc-bootstrap.yaml Job створив транзит ключі (exportable=true):
+scripts/export-transit-keys.sh
+# Тоді .env файл копіюється на off-laptop encrypted medium як DR insurance.
+```
+
 ## Checklist перед першим `argocd sync bootstrap-secrets`
 
 - [ ] Vault init, unseal, OIDC auth, Kubernetes auth — пройдені (див. `../vault/README.md`).
@@ -351,5 +487,9 @@ apply:
 - [ ] `kv/nexora/develop/apps/admin/runtime` записаний (pepper + vault_token).
 - [ ] `kv/nexora/develop/apps/api/runtime` записаний (pepper + vault_token, той самий pepper що в admin якщо ділять blind indexes).
 - [ ] `kv/nexora/develop/oidc/nexora-admin` записаний (після того як Authentik blueprint nexora-admin-oidc згенерував provider, скопіювати client_secret з UI).
-- [ ] Hetzner Object Storage buckets `nexora-develop-cnpg-backups`,
-      `nexora-develop-loki`, `nexora-develop-tempo` створено.
+- [ ] `kv/nexora/develop/oidc/argocd` записаний (Authentik provider `argocd` — див. §18).
+- [ ] `kv/nexora/develop/oidc/grafana` записаний (Authentik provider `grafana` — див. §19).
+- [ ] `kv/nexora/develop/tailscale` записаний (Tailscale OAuth client — див. §20).
+- [ ] `kv/nexora/develop/vault/snapshot-token` записаний (periodic Vault token для raft snapshot CronJob — див. §21).
+- [ ] `kv/nexora/develop/vault/snapshots-s3` записаний (Hetzner OS креди для snapshot bucket — той самий keypair що cnpg/backup-s3).
+- [ ] Hetzner Object Storage buckets створено: `nexora-cnpg-backups-develop`, `nexora-cnpg-backups-authentik-develop`, `nexora-vault-snapshots-develop`, `nexora-develop-loki`, `nexora-develop-tempo`.

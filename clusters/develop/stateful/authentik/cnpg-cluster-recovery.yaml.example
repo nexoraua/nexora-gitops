@@ -1,0 +1,113 @@
+# PITR / DR recovery template for nexora-authentik-develop. To restore:
+# follow the same procedure as cnpg-cluster-recovery.yaml.example in
+# the postgresql namespace.
+#
+# Special consideration for Authentik DB recovery: the DB carries
+#   - akadmin password hash + bootstrap token (also in
+#     authentik-postgres-credentials Secret — Vault-seeded — so a fresh
+#     bootstrap.initdb would recreate the user from the same hash,
+#     but USER data created post-init like blueprint-applied groups,
+#     OIDC providers, client_secrets, user enrollments are NOT in the
+#     Secret — only in the DB);
+#   - OIDC provider client_secrets (Authentik-generated, in
+#     authentik_providers_oauth2_oauth2provider.client_secret);
+#   - applied blueprint instances (authentik_blueprints_blueprintinstance);
+#   - real user accounts (authentik_core_user).
+#
+# Restoring from backup brings ALL of these back to the snapshot point.
+# After restore, ANY OIDC client_secret that downstream apps (vault,
+# argocd, grafana, nexora-admin) hold MAY have rotated since the
+# snapshot — re-run extract-oidc-from-authentik.sh and seed-vault-
+# from-env.sh --only oidc to re-sync Vault + force-sync each
+# downstream ExternalSecret.
+#
+# bootstrap.initdb is REMOVED in this recovery file (discriminated
+# union with bootstrap.recovery).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: nexora-authentik-develop
+  namespace: authentik
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.0
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cnpg-authentik-superuser
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
+  storage:
+    storageClass: linstor-r1
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  affinity:
+    nodeSelector:
+      nodepool: database
+    tolerations:
+      - key: nodepool
+        operator: Equal
+        value: database
+        effect: NoSchedule
+  monitoring:
+    enablePodMonitor: false
+  bootstrap:
+    recovery:
+      source: nexora-authentik-develop-source
+      # Uncomment ONE:
+      #
+      # (a) Latest available
+      # recoveryTarget: {}
+      #
+      # (b) Point-in-time
+      # recoveryTarget:
+      #   targetTime: "TARGET_TIME"          # e.g. "2026-06-15 14:31:55+00"
+      #   targetInclusive: false
+      #
+      # (c) Specific backup
+      # recoveryTarget:
+      #   backupID: "SOURCE_BACKUP_NAME"     # e.g. "20260615T040000"
+  externalClusters:
+    - name: nexora-authentik-develop-source
+      barmanObjectStore:
+        destinationPath: "s3://nexora-cnpg-backups-authentik-develop/"
+        endpointURL: "https://fsn1.your-objectstorage.com"
+        s3Credentials:
+          accessKeyId:
+            name: cnpg-backup-s3
+            key: ACCESS_KEY_ID
+          secretAccessKey:
+            name: cnpg-backup-s3
+            key: SECRET_ACCESS_KEY
+        serverName: nexora-authentik-develop
+        wal:
+          compression: gzip
+          maxParallel: 2
+        data:
+          compression: gzip
+          jobs: 2
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://nexora-cnpg-backups-authentik-develop/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-s3
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2

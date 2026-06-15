@@ -1,0 +1,204 @@
+# Periodic Vault Raft snapshot → Hetzner Object Storage.
+#
+# Why: Vault's raft data lives on three 10Gi hcloud-volumes PVCs and is
+# the ONLY copy of KV + Transit keyring + auth methods. Without an
+# off-cluster snapshot, simultaneous loss of all three PVCs (project-
+# wide deletion, Hetzner region outage, accidental prune despite
+# prune:false) means total Vault loss → permanent PII unreadability +
+# CNPG backups undecryptable. This CronJob is the cheapest mitigation.
+#
+# Cadence: every 6h (00:00, 06:00, 12:00, 18:00 UTC). Retention: 30d,
+# enforced by a Hetzner Object Storage lifecycle policy on the bucket
+# (the CronJob just uploads — does NOT garbage-collect).
+#
+# Bucket: nexora-vault-snapshots-develop (pre-create in Hetzner Console
+# alongside the CNPG backup buckets). The CronJob uses the same
+# project-wide Hetzner OS access key seeded at
+# kv/nexora/develop/vault/snapshots-s3 — IDENTICAL credentials as
+# cnpg-backup-s3 (one key per Hetzner project, see secrets/README.md
+# §5). Acknowledged blast-radius gap; mitigated by separate bucket
+# names + lifecycle policy.
+#
+# Auth: snapshots require Vault capability `sudo` on
+# /sys/storage/raft/snapshot. Created a dedicated periodic token at
+# bootstrap (TTL 30d, renewable, policy `vault-snapshot`) and stored
+# at kv/nexora/develop/vault/snapshot-token. ESO materializes it; the
+# Job uses Vault's HTTP API directly via curl (simpler than embedding
+# both vault CLI + aws CLI in one image — aws-cli image already has
+# curl).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-snapshot
+  namespace: vault-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: vault-snapshot-token
+  namespace: vault-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-kv
+    kind: ClusterSecretStore
+  target:
+    name: vault-snapshot-token
+    creationPolicy: Owner
+  data:
+    - secretKey: VAULT_TOKEN
+      remoteRef:
+        key: nexora/develop/vault/snapshot-token
+        property: token
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: vault-snapshot-s3
+  namespace: vault-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-kv
+    kind: ClusterSecretStore
+  target:
+    name: vault-snapshot-s3
+    creationPolicy: Owner
+  data:
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef:
+        key: nexora/develop/vault/snapshots-s3
+        property: ACCESS_KEY_ID
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef:
+        key: nexora/develop/vault/snapshots-s3
+        property: SECRET_ACCESS_KEY
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vault-raft-snapshot
+  namespace: vault-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  schedule: "0 */6 * * *"          # 00:00, 06:00, 12:00, 18:00 UTC
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: vault-raft-snapshot
+            app.kubernetes.io/part-of: vault
+        spec:
+          serviceAccountName: vault-snapshot
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            fsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: snapshot
+              # aws-cli base image ships curl + sh + aws (everything we
+              # need); avoids gluing two images via shared volume.
+              image: amazon/aws-cli:2.17.27
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: VAULT_ADDR
+                  value: http://vault.vault-system.svc:8200
+                - name: VAULT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: vault-snapshot-token
+                      key: VAULT_TOKEN
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: vault-snapshot-s3
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: vault-snapshot-s3
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: AWS_REGION
+                  value: fsn1
+                - name: AWS_ENDPOINT_URL
+                  value: https://fsn1.your-objectstorage.com
+                - name: BUCKET
+                  value: nexora-vault-snapshots-develop
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  ts=$(date -u +%Y%m%dT%H%M%SZ)
+                  out=/tmp/vault-${ts}.snap
+
+                  # Take snapshot via Vault HTTP API (raft endpoint
+                  # streams binary). VAULT_ADDR routes via the cluster
+                  # service which targets the current Raft leader.
+                  echo "Taking snapshot → ${out}"
+                  http=$(curl -sS -o "$out" -w "%{http_code}" \
+                    -H "X-Vault-Token: ${VAULT_TOKEN}" \
+                    "${VAULT_ADDR}/v1/sys/storage/raft/snapshot")
+                  if [ "$http" != "200" ]; then
+                    echo "ERROR: snapshot HTTP ${http}" >&2
+                    head -c 512 "$out" >&2 || true
+                    exit 1
+                  fi
+
+                  size=$(stat -c%s "$out" 2>/dev/null || stat -f%z "$out")
+                  echo "snapshot size: ${size} bytes"
+                  # Sanity floor: a real snapshot is >4KiB. Smaller
+                  # likely means an empty/corrupt raft.
+                  if [ "$size" -lt 4096 ]; then
+                    echo "ERROR: snapshot suspiciously small" >&2
+                    exit 1
+                  fi
+
+                  # Upload to Hetzner OS via aws CLI (sigv4 against the
+                  # custom endpoint). Use storage-class STANDARD because
+                  # Hetzner OS does not implement IA/Glacier tiers.
+                  echo "Uploading → s3://${BUCKET}/$(basename ${out})"
+                  aws --endpoint-url "$AWS_ENDPOINT_URL" \
+                      s3 cp "$out" "s3://${BUCKET}/$(basename ${out})" \
+                      --no-progress
+
+                  # Cleanup local file so emptyDir doesn't accumulate.
+                  rm -f "$out"
+                  echo "done"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                readOnlyRootFilesystem: true
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 1Gi
