@@ -6,7 +6,11 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`dev.nexora.in.ua`) && PathPrefix(`/api`)
+    # API surface: /api/* (business endpoints), /openapi/* (spec JSON),
+    # /scalar/* (interactive UI). The non-/api prefixes are exposed in
+    # develop + staging only — Production drops them at the app layer
+    # (Program.cs gates MapOpenApi + MapScalarApiReference on !IsProduction).
+    - match: Host(`dev.nexora.in.ua`) && (PathPrefix(`/api`) || PathPrefix(`/openapi`) || PathPrefix(`/scalar`))
       kind: Rule
       priority: 100
       services:
