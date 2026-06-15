@@ -229,17 +229,107 @@ blueprint `platform/authentik/blueprints/google-oauth.yaml` посилаєтьс
 > `oauth2.googleapis.com`, `www.googleapis.com`. Без цього apply падає
 > у `Network is unreachable` і `BlueprintInstance.status = error`.
 
-### 14. GitHub image pull token (опційно, якщо private registry)
+### 14. GitHub image pull token (обовʼязковий — `ghcr.io/nexoraua/*` приватні)
+
+Кожен з 3 workloads (`nexora-api`, `nexora-admin`, `nexora-frontend`)
+має власний `ExternalSecret/ghcr-pull-secret` у своєму namespace, який
+тягне `username` + `password` з одного Vault path і ESO templates
+`dockerconfigjson` Secret-у на льоту. Тому в Vault лежать ДВА ключі,
+не один blob.
+
+1. Створити **fine-grained PAT** на github.com → Settings → Developer
+   settings → Personal access tokens → Fine-grained tokens:
+   - Resource owner: `nexoraua`
+   - Repository access: All repositories (або тільки `nexora-*`)
+   - Permissions: **Packages → Read-only**
+   - Expiration: 90 днів (rotation cadence)
+
+2. Seed Vault:
+   ```bash
+   vault kv put kv/nexora/develop/registry/ghcr \
+     username=<твій-github-username> \
+     password=<новий-PAT>
+   ```
+
+3. Force ESO sync у всіх 3 ns (інакше чекати до 1h refresh):
+   ```bash
+   for ns in nexora-api nexora-admin nexora-frontend; do
+     kubectl -n $ns annotate externalsecret ghcr-pull-secret \
+       force-sync=$(date +%s) --overwrite
+   done
+   ```
+
+> **Rotation:** 1Password нагадування за 7 днів до expiration; новий
+> PAT, `vault kv put …` (same path), force-sync. Старий PAT revoke у
+> GitHub UI одразу після того як kubelet перетягне новий imagePullSecret
+> (по нових pod-ах).
+
+### 15. Admin app runtime config
+
+Admin споживає 3 Secret-и:
+
+- `nexora-admin-runtime` (Vault) — справжні секрети
+- `nexora-admin-db-conn` (CNPG, через ESO `kind: SecretStore` з kubernetes provider) — DB connection string з CNPG-managed `nexora-business-develop-app` Secret, ні рядка у Vault
+- `ghcr-pull-secret` — див. §14
+
+Vault seed для runtime:
 
 ```bash
-docker_config=$(echo -n '{"auths":{"ghcr.io":{"username":"nexora-ci","password":"'$GH_PAT'","auth":"'$(echo -n nexora-ci:$GH_PAT | base64)'"}}}' | base64 -w 0)
-
-vault kv put kv/nexora/develop/registry/ghcr \
-  .dockerconfigjson=$docker_config
+vault kv put kv/nexora/develop/apps/admin/runtime \
+  blind_index_pepper_base64="$(openssl rand -base64 32)" \
+  vault_token="<vault-token-з-K8s-auth-role-nexora-admin>"
 ```
 
-Materialize додати окремим `ExternalSecret`, коли з'явиться приватний
-image (на старті Nexora образи публічні / Hetzner registry).
+> **Pepper:** генерується ОДИН РАЗ за час життя продукту. Зміна pepper
+> інвалідує всі існуючі blind indexes — DB треба перебудувати. Кладеться
+> у 1Password vault `Nexora Breakglass` після першої генерації.
+>
+> **vault_token:** static token — тимчасово до міграції на Vault
+> Kubernetes auth (нагадування у follow-up). Згенерувати через
+> `vault token create -policy=nexora-app-develop -period=720h` і
+> seed-ити сюди.
+
+### 16. API app runtime config
+
+Аналогічно admin, але БЕЗ Authentik client_secret (api валідує JWT, не
+користується OIDC code-flow як клієнт). Public OIDC config
+(authorities/audiences) живе у `deployment-patch.yaml` env vars.
+
+```bash
+vault kv put kv/nexora/develop/apps/api/runtime \
+  blind_index_pepper_base64="$(openssl rand -base64 32)" \
+  vault_token="<vault-token-K8s-auth-role-nexora-api>"
+```
+
+> ⚠️ pepper для api MAЄ збігатись з pepper admin якщо обидва читають
+> ті ж blind-indexed таблиці. Краще згенерувати ОДИН pepper і seed-ити
+> у обидва path-и (`apps/api/runtime` + `apps/admin/runtime`). Інакше
+> один сервіс не зможе шукати по індексах створеним іншим.
+
+### 17. Authentik OIDC client_secret для Nexora Admin
+
+Blueprint `platform/authentik/blueprints/nexora-admin-oidc.yaml`
+автоматично створює OAuth2 Provider `nexora-admin` + Application з
+fixed `client_id=nexora-admin`. `client_secret` Authentik генерує
+автоматично і його треба ОДИН РАЗ скопіювати у Vault після першого
+apply:
+
+1. Authentik UI → Providers → `nexora-admin` → Edit
+2. Поле "Client Secret" — кнопка "Copy"
+3. Seed:
+   ```bash
+   vault kv put kv/nexora/develop/oidc/nexora-admin \
+     client_secret=<скопійоване-значення>
+   ```
+4. Force-sync admin runtime:
+   ```bash
+   kubectl -n nexora-admin annotate externalsecret nexora-admin-runtime \
+     force-sync=$(date +%s) --overwrite
+   ```
+
+> **Rotation:** Authentik UI → Edit → Rotate Client Secret → новий
+> `vault kv put` + force-sync. Тримати active session на admin під час
+> rotation (новий secret підмінюється на льоту через ESO refresh).
 
 ## Checklist перед першим `argocd sync bootstrap-secrets`
 
@@ -257,5 +347,9 @@ image (на старті Nexora образи публічні / Hetzner registry
       blueprint згенерував provider).
 - [ ] `kv/nexora/develop/alerts/telegram` записаний.
 - [ ] `kv/nexora/develop/authentik/google-oauth` записаний (після створення OAuth Client ID у Google Cloud Console).
+- [ ] `kv/nexora/develop/registry/ghcr` записаний (GitHub fine-grained PAT з Packages Read).
+- [ ] `kv/nexora/develop/apps/admin/runtime` записаний (pepper + vault_token).
+- [ ] `kv/nexora/develop/apps/api/runtime` записаний (pepper + vault_token, той самий pepper що в admin якщо ділять blind indexes).
+- [ ] `kv/nexora/develop/oidc/nexora-admin` записаний (після того як Authentik blueprint nexora-admin-oidc згенерував provider, скопіювати client_secret з UI).
 - [ ] Hetzner Object Storage buckets `nexora-develop-cnpg-backups`,
       `nexora-develop-loki`, `nexora-develop-tempo` створено.

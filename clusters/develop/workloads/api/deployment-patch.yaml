@@ -17,3 +17,35 @@ spec:
               value: https://app.develop.nxua.dev
             - name: Cors__AllowedOrigins__1
               value: https://admin.develop.nxua.dev
+            # JWT validation config — PUBLIC OIDC settings (not secrets).
+            # Authority is fetched at startup for the JWKS to verify
+            # signatures; Issuer + Audience are claim comparisons.
+            #
+            # AdminJwt — admin backoffice tokens from the nexora-admin
+            # OIDC provider (Authentik blueprint nexora-admin-oidc.yaml,
+            # audience = nexora-admin). Wired below.
+            #
+            # UserJwt — mobile/web end-user tokens. The user identity
+            # stack for develop is NOT decided yet (candidates: API-
+            # issued JWT after SMS verification; separate Authentik
+            # provider for end users; Authentik forward-auth via mobile
+            # OIDC client). Once the choice is made, add the matching
+            # env block here. Leaving them unset means the user-auth
+            # pipeline returns 401 on every request — acceptable for a
+            # cluster that currently has zero end-user traffic on
+            # develop. DO NOT default to a placeholder Authority — a
+            # bad JWKS URL silently breaks Admin auth as well (shared
+            # IDistributedCache key collision in some setups).
+            - name: Auth__AdminJwt__Authority
+              value: https://auth.develop.nxua.dev/application/o/nexora-admin/
+            - name: Auth__AdminJwt__Issuer
+              value: https://auth.develop.nxua.dev/application/o/nexora-admin/
+            - name: Auth__AdminJwt__Audience
+              value: nexora-admin
+            - name: Auth__AdminJwt__RequireHttpsMetadata
+              value: "true"
+          envFrom:
+            - secretRef:
+                name: nexora-api-runtime
+            - secretRef:
+                name: nexora-api-db-conn

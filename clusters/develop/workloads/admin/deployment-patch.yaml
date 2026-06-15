@@ -1,0 +1,31 @@
+# Develop-specific admin deployment patch. Overlays the _base manifest:
+#   - Adds public OIDC config as env vars (was unnecessarily living in
+#     Vault). Authority is a public URL; ClientId is fixed to
+#     `nexora-admin` by the Authentik blueprint (deterministic, not a
+#     rotating secret).
+#   - Wires the second envFrom (nexora-admin-db-conn) — CNPG-derived
+#     connection string, populated by the nexora-admin-db-conn
+#     ExternalSecret. The original nexora-admin-runtime envFrom from
+#     _base stays as-is and now only carries true secrets (pepper,
+#     vault token, client_secret).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-admin
+spec:
+  template:
+    spec:
+      containers:
+        - name: admin
+          env:
+            - name: Auth__Authentik__Authority
+              value: https://auth.develop.nxua.dev/application/o/nexora-admin/
+            - name: Auth__Authentik__ClientId
+              value: nexora-admin
+            - name: Auth__Authentik__RequireHttpsMetadata
+              value: "true"
+          envFrom:
+            - secretRef:
+                name: nexora-admin-runtime
+            - secretRef:
+                name: nexora-admin-db-conn

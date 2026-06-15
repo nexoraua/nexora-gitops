@@ -2,6 +2,7 @@ namespace: nexora-api
 
 resources:
   - ../../../_base/workloads/api
+  - cnpg-secretstore.yaml
   - external-secrets.yaml
   - ingress.yaml
 
