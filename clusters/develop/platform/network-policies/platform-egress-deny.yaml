@@ -179,3 +179,16 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # Google OAuth federation — Authentik OAuth Source provider_type=google
+    # validates by fetching the OIDC discovery doc + JWKS at apply time
+    # and again on every login token exchange. accounts.google.com →
+    # discovery + authorize + token; www.googleapis.com → userinfo +
+    # JWKS; oauth2.googleapis.com → token (newer endpoint).
+    - toFQDNs:
+        - matchName: "accounts.google.com"
+        - matchName: "oauth2.googleapis.com"
+        - matchName: "www.googleapis.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
