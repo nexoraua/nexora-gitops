@@ -41,6 +41,7 @@ spec:
             - authentik-blueprint-argocd-oidc
             - authentik-blueprint-grafana-rbac
             - authentik-blueprint-grafana-oidc
+            - authentik-blueprint-nexora-admin-oidc
         authentik:
           error_reporting:
             enabled: false
