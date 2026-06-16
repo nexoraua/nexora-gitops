@@ -8,6 +8,7 @@ resources:
 
 patches:
 - path: deployment-patch.yaml
+- path: migration-job-patch.yaml
 
 # Image tags managed by nexora-backend CI (ci.yml `deploy` job runs
 # `kustomize edit set image` on push). Bootstrapping with the same sha

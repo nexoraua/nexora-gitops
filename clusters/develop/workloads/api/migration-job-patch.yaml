@@ -1,0 +1,27 @@
+# Develop-specific patch for the api migration Job.
+#
+# The base manifest only mounts `nexora-api-runtime` (Vault secrets:
+# pepper + vault token after the refactor in commit 7e4ed88).
+# Develop's DB connection string is templated by ESO from the
+# CNPG-managed Secret into `nexora-api-db-conn` — see
+# external-secrets.yaml + cnpg-secretstore.yaml. The migrator needs
+# `ConnectionStrings__NexoraDb` at startup or aborts with "Missing
+# database connection string".
+#
+# Staging/prod keep the old layout (connection string baked into
+# `nexora-api-runtime`), so this patch lives only in the develop
+# overlay; the base Job stays untouched.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nexora-api-migrate
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrator
+          envFrom:
+            - secretRef:
+                name: nexora-api-runtime
+            - secretRef:
+                name: nexora-api-db-conn
