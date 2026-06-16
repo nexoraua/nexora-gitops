@@ -14,9 +14,9 @@ patches:
 # staging is currently pinned to so a from-zero rebuild lands a
 # pullable image even before the first develop CI run.
 images:
-- digest: sha256:1eb7bf9ca4bf539175463897ef76c3b886b533f9686f6bb3bd2a579098dc158e
+- digest: sha256:6f25d3907da363b4c134fd29d6986f33f583786033ef45d6acba165989217a58
   name: ghcr.io/nexoraua/nexora-admin
   newName: ghcr.io/nexoraua/nexora-admin
-  newTag: sha-c22c684cd5e3
+  newTag: sha-895710876339
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
