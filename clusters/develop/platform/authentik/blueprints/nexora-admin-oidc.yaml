@@ -46,14 +46,24 @@ data:
           #     client_secret=<the-value>
           # See platform/secrets/README.md §17 for the full procedure.
           authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          # invalidation_flow is required by Authentik 2025.x+ — logout/
+          # session revocation flow. Reuses the same default flow used
+          # by built-in providers.
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
           access_code_validity: minutes=1
           access_token_validity: minutes=10
           refresh_token_validity: days=30
           include_claims_in_id_token: true
           signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
-          redirect_uris: |-
-            https://admin.develop.nxua.dev/signin-oidc
-            https://admin.develop.nxua.dev/signin-callback
+          # Authentik 2025.x expects redirect_uris as a list of objects
+          # (`matching_mode: strict` + `url`), not a newline-delimited
+          # string. Listed explicitly so blueprint apply doesn't get the
+          # "Expected a list of items but got type str" serializer error.
+          redirect_uris:
+            - matching_mode: strict
+              url: https://admin.develop.nxua.dev/signin-oidc
+            - matching_mode: strict
+              url: https://admin.develop.nxua.dev/signin-callback
           property_mappings:
             - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
