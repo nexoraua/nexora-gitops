@@ -1,3 +1,18 @@
+# Admin ingress — Authentik OIDC is the single auth gate.
+#
+# Removed: cloudflare-jwt-assertion middleware. The admin Blazor
+# Server app already enforces Authentik OIDC end-to-end via
+# AddAuthentikOidc(...) in Program.cs — any unauthenticated request
+# is redirected to https://auth.develop.nxua.dev/application/o/
+# authorize/?client_id=nexora-admin&... → Google federation → callback
+# to /signin-oidc → cookie session. CF Access was a redundant second
+# auth layer that complicated debugging (404 instead of 302) and
+# blocked dev access without a CF login.
+#
+# Authorization is group-based: Authentik issues a `groups` claim on
+# the ID token (see platform/authentik/blueprints/nexora-admin-oidc.yaml
+# scope-openid-groups property mapping). The admin app maps Authentik
+# groups → Razor [Authorize(Roles=...)] policies inside AddAuthentikOidc.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -9,8 +24,6 @@ spec:
     - match: Host(`admin.develop.nxua.dev`)
       kind: Rule
       middlewares:
-        - name: cloudflare-jwt-assertion
-          namespace: traefik
         - name: secure-headers
       services:
         - name: nexora-admin
