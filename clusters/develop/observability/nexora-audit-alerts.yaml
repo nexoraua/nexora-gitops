@@ -1,0 +1,68 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: nexora-audit
+  namespace: monitoring
+spec:
+  groups:
+    - name: nexora-audit
+      interval: 30s
+      rules:
+        - alert: NexoraAuditHashChainBroken
+          expr: increase(nexora_audit_hash_chain_breaks_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/audit-hash-break.md
+          annotations:
+            summary: "Audit hash chain broken on {{ $labels.service_name }}"
+            description: |
+              The audit hash-chain verifier detected at least one row whose
+              recomputed row_hash does not match its stored value. This is
+              a Sev-1 integrity incident. Follow audit-hash-break.md.
+
+        - alert: NexoraAuditWriteErrors
+          expr: increase(nexora_audit_write_errors_total[5m]) > 0
+          for: 2m
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/audit-tamper.md
+          annotations:
+            summary: "Audit row writes failing on {{ $labels.service_name }}"
+            description: |
+              Audit middleware caught and logged at least one write failure
+              in the last 5 minutes. Possible causes: chain trigger reject,
+              DB outage, constraint violation. Loki query:
+              service="{{ $labels.service_name }}" message=~"audit.write_failed".
+
+        - alert: NexoraFourEyesViolations
+          expr: increase(nexora_four_eyes_violations_total[15m]) > 0
+          for: 2m
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/four-eyes-stuck.md
+          annotations:
+            summary: "Four-eyes invariant violations on {{ $labels.service_name }}"
+            description: |
+              At least one same-actor / hash-mismatch / expired / wrong-state
+              violation in the last 15 minutes. Likely a misconfigured
+              command attribute or an admin role / permission mismatch.
+
+        - alert: NexoraFourEyesStuckQueue
+          expr: |
+            (nexora_four_eyes_parked_total - nexora_four_eyes_executed_total - nexora_four_eyes_rejected_total) > 0
+            and on() time() % 86400 < 21600
+          for: 1h
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/four-eyes-stuck.md
+          annotations:
+            summary: "Four-eyes queue depth growing on {{ $labels.service_name }}"
+            description: |
+              Net parked-but-not-executed-or-rejected rows is non-zero into
+              the morning window — second approvers may be unreachable or
+              the queue is blocked. Check the admin /pending-actions page.
