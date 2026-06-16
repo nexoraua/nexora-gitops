@@ -1,16 +1,18 @@
 namespace: nexora-frontend
 
 resources:
-  - ../../../_base/workloads/frontend
-  - external-secrets.yaml
-  - ingress.yaml
+- ../../../_base/workloads/frontend
+- external-secrets.yaml
+- ingress.yaml
 
 # Image tags managed by nexora-frontend CI (ci.yml `deploy` job runs
 # `kustomize edit set image` on push). Bootstrapping with the same sha
 # staging is currently pinned to so a from-zero rebuild lands a
 # pullable image even before the first develop CI run.
 images:
-  - name: ghcr.io/nexoraua/nexora-frontend
-    newName: ghcr.io/nexoraua/nexora-frontend
-    newTag: sha-c1b6a1ab84c1
-    digest: sha256:ffde3347890efe1fd1b1444522f52ecf09d8adc81e487e07f11887d5bac371e9
+- digest: sha256:f2f18e14626bbbfb006483ae17bf856aea80fe842d82f0c630fbb7305e3136b5
+  name: ghcr.io/nexoraua/nexora-frontend
+  newName: ghcr.io/nexoraua/nexora-frontend
+  newTag: sha-c1b6a1ab84c1
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
