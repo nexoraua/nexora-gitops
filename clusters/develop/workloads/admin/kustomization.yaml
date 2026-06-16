@@ -1,20 +1,22 @@
 namespace: nexora-admin
 
 resources:
-  - ../../../_base/workloads/admin
-  - cnpg-secretstore.yaml
-  - external-secrets.yaml
-  - ingress.yaml
+- ../../../_base/workloads/admin
+- cnpg-secretstore.yaml
+- external-secrets.yaml
+- ingress.yaml
 
 patches:
-  - path: deployment-patch.yaml
+- path: deployment-patch.yaml
 
 # Image tags managed by nexora-backend CI (ci.yml `deploy` job runs
 # `kustomize edit set image` on push). Bootstrapping with the same sha
 # staging is currently pinned to so a from-zero rebuild lands a
 # pullable image even before the first develop CI run.
 images:
-  - name: ghcr.io/nexoraua/nexora-admin
-    newName: ghcr.io/nexoraua/nexora-admin
-    newTag: sha-051729f3da28
-    digest: sha256:8ad84bd9f664b6b5f38d1f94d10c6873a274701816c46bc68ccce314cb5861c6
+- digest: sha256:1ae31071256f14abe545b85b0f4ca7da9af9bdb3ead0abe952c9a36a0b1c4a75
+  name: ghcr.io/nexoraua/nexora-admin
+  newName: ghcr.io/nexoraua/nexora-admin
+  newTag: sha-051729f3da28
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
