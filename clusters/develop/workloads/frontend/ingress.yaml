@@ -1,3 +1,8 @@
+# Frontend ingress — Flutter Web mobile-app shell. Served on the
+# apex `develop.nxua.dev` (no `app.` prefix). Wildcard
+# *.develop.nxua.dev does NOT cover the apex; the root A-record is
+# provisioned by the Terraform `cloudflare_dns_record.ingress_root`
+# resource (nexora-infra modules/hetzner-talos-cluster/platform.tf).
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -6,7 +11,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`app.develop.nxua.dev`) && PathPrefix(`/`)
+    - match: Host(`develop.nxua.dev`) && PathPrefix(`/`)
       kind: Rule
       priority: 1
       middlewares:
@@ -26,8 +31,8 @@ spec:
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
-  commonName: app.develop.nxua.dev
+  commonName: develop.nxua.dev
   dnsNames:
-    - app.develop.nxua.dev
+    - develop.nxua.dev
   duration: 2160h
   renewBefore: 360h

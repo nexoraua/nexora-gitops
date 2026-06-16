@@ -8,13 +8,14 @@ spec:
       containers:
         - name: api
           env:
-            # CORS origins for develop — frontend (app.develop.nxua.dev) and
-            # admin (admin.develop.nxua.dev) need to call api.develop.nxua.dev
-            # via JS, so both hosts must appear in the allow-list. ASP.NET
-            # Core reads "Cors:AllowedOrigins" as a string[]; double-underscore
+            # CORS origins for develop — frontend (develop.nxua.dev, apex
+            # of the env subdomain) and admin (admin.develop.nxua.dev)
+            # need to call api.develop.nxua.dev via JS, so both hosts
+            # must appear in the allow-list. ASP.NET Core reads
+            # "Cors:AllowedOrigins" as a string[]; double-underscore
             # path with numeric index is how it binds via env vars.
             - name: Cors__AllowedOrigins__0
-              value: https://app.develop.nxua.dev
+              value: https://develop.nxua.dev
             - name: Cors__AllowedOrigins__1
               value: https://admin.develop.nxua.dev
             # JWT validation config — PUBLIC OIDC settings (not secrets).
