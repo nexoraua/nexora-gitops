@@ -1,0 +1,22 @@
+# Production HPA for nexora-frontend.
+#
+# Static SPA served by nginx — scaling needs are tiny. min=2 holds the
+# PDB, max=6 for marketing-campaign spikes. CDN absorbs most traffic.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexora-frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nexora-frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

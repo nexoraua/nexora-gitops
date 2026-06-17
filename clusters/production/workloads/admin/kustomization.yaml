@@ -3,6 +3,7 @@ namespace: nexora-admin
 resources:
   - ../../../_base/workloads/admin
   - external-secrets.yaml
+  - hpa.yaml
   - ingress.yaml
 
 patches:

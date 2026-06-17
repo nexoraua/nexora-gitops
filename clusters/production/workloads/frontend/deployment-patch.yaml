@@ -4,3 +4,17 @@ metadata:
   name: nexora-frontend
 spec:
   replicas: 2
+  template:
+    spec:
+      containers:
+        - name: frontend
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              # S14 Wave 1.8 — static nginx serving SPA, 200m cap is
+              # more than enough for the highest realistic request
+              # rate against the bundled assets.
+              cpu: 200m
+              memory: 128Mi

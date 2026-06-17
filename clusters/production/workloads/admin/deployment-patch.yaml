@@ -20,4 +20,9 @@ spec:
               cpu: 250m
               memory: 256Mi
             limits:
+              # CPU limit added in S14 Wave 1.8 — keeps the Blazor
+              # circuit pool deterministic under load. Admin is
+              # bursty (queue refreshes) but never long-running, so
+              # a 1-core ceiling is enough.
+              cpu: "1"
               memory: 512Mi

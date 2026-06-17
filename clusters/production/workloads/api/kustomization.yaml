@@ -3,6 +3,7 @@ namespace: nexora-api
 resources:
   - ../../../_base/workloads/api
   - external-secrets.yaml
+  - hpa.yaml
   - ingress.yaml
 
 patches:

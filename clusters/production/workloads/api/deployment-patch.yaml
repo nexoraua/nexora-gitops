@@ -20,4 +20,9 @@ spec:
               cpu: 500m
               memory: 512Mi
             limits:
+              # CPU limit added in S14 Wave 1.8 — kubelet enforces a
+              # hard cap so a noisy neighbour can't starve the API.
+              # Burstability is sacrificed for QoS predictability,
+              # which is the right trade-off for a regulated workload.
+              cpu: "2"
               memory: 1Gi
