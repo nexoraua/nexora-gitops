@@ -9,6 +9,9 @@ spec:
     - match: Host(`staging.nexora.in.ua`) && PathPrefix(`/api`)
       kind: Rule
       priority: 100
+      middlewares:
+        - name: rate-limit-api
+          namespace: traefik
       services:
         - name: nexora-api
           port: 80

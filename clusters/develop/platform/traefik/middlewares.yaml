@@ -1,0 +1,20 @@
+# Shared Traefik middlewares applied across develop IngressRoutes.
+# Per-route attachment is in each app's ingress manifest.
+#
+# S13b launch hardening — the API IngressRoute attaches rate-limit-api
+# so develop mirrors the production posture and we can rehearse / spot
+# regressions there first.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-api
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 30
+    burst: 60
+    period: 1s
+    sourceCriterion:
+      ipStrategy:
+        depth: 1

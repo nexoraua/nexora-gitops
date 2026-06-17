@@ -16,6 +16,9 @@ spec:
     - match: Host(`api.develop.nxua.dev`) && (PathPrefix(`/api`) || PathPrefix(`/openapi`) || PathPrefix(`/scalar`))
       kind: Rule
       priority: 100
+      middlewares:
+        - name: rate-limit-api
+          namespace: traefik
       services:
         - name: nexora-api
           port: 80

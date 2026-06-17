@@ -18,9 +18,30 @@ spec:
       ipStrategy:
         depth: 1   # behind Cloudflare; trust the CF-Connecting-IP header
 ---
+# Per-IP auth-tier rate limit. Stricter than the global limiter —
+# attached to api IngressRoutes so brute-force on login / register /
+# OTP is throttled at the edge (5 req / IP / minute, no burst).
+# Defense in depth with the .NET rate limiter (auth-tier policy
+# inside Nexora.Api).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-api
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 30        # 30 req/s sustained
+    burst: 60          # short burst for legitimate traffic
+    period: 1s
+    sourceCriterion:
+      ipStrategy:
+        depth: 1
+---
 # Secure HTTP headers: HSTS preload, no-sniff, frame-deny, strict
 # referrer, CSP default-src 'self'. Applied to UI hosts (admin, grafana,
-# argocd) — NOT to api.nxua.dev (the API sets its own CSP/CORS).
+# argocd) — and now also to api.nxua.dev (S13b launch hardening —
+# audit found api host had no edge headers; CSP / referrer-policy
+# layer in front of the app-level Nexora.Api.Security middleware).
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:

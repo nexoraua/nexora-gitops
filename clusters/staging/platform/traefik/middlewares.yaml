@@ -1,0 +1,16 @@
+# Shared Traefik middlewares applied across staging IngressRoutes.
+# S13b launch hardening — mirrors develop / production.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-api
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 30
+    burst: 60
+    period: 1s
+    sourceCriterion:
+      ipStrategy:
+        depth: 1
