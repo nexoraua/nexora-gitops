@@ -16,13 +16,13 @@ patches:
 # pullable image even before the first develop CI run. CI will
 # overwrite these on the next push to nexora-backend develop branch.
 images:
-- digest: sha256:78df0a63b7818c62f6f23eb61863b3755ff71aab59ffd212c78bd476798d9fc4
+- digest: sha256:2810c7c27007a4a2c654bc487a36e034d624bb1a603a94edaed463bdc5fa337e
   name: ghcr.io/nexoraua/nexora-api
   newName: ghcr.io/nexoraua/nexora-api
-  newTag: sha-5f72af35bc0c
-- digest: sha256:6ee1fd313d1df9b7bbfb4c00f9321ee243c7f3c99455b9a13c9d418f0a1ab795
+  newTag: sha-172ecfe9a777
+- digest: sha256:70572b1a846dbc891dd23eb36535017f3cb4fb57c10e8d66454143755b134a10
   name: ghcr.io/nexoraua/nexora-migrator
   newName: ghcr.io/nexoraua/nexora-migrator
-  newTag: sha-5f72af35bc0c
+  newTag: sha-172ecfe9a777
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
