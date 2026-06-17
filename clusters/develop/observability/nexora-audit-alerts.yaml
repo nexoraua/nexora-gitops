@@ -37,19 +37,45 @@ spec:
               DB outage, constraint violation. Loki query:
               service="{{ $labels.service_name }}" message=~"audit.write_failed".
 
-        - alert: NexoraFourEyesViolations
-          expr: increase(nexora_four_eyes_violations_total[15m]) > 0
+        # S14 W2.4 — split FourEyes alerts by reason label.
+        # Real invariant violations (same-actor, hash mismatch, wrong state)
+        # are a backend integrity incident — page backend.
+        - alert: NexoraFourEyesIntegrityViolations
+          expr: |
+            increase(
+              nexora_four_eyes_violations_total{reason!="expired_by_cron"}[15m]
+            ) > 0
           for: 2m
           labels:
             severity: warning
             page: oncall-backend
             runbook: nexora-docs/runbooks/four-eyes-stuck.md
           annotations:
-            summary: "Four-eyes invariant violations on {{ $labels.service_name }}"
+            summary: "Four-eyes integrity violation on {{ $labels.service_name }}"
             description: |
-              At least one same-actor / hash-mismatch / expired / wrong-state
-              violation in the last 15 minutes. Likely a misconfigured
-              command attribute or an admin role / permission mismatch.
+              Same-actor / hash-mismatch / wrong-state violation in the
+              last 15 minutes. Likely a misconfigured command attribute
+              or an admin role / permission mismatch. Check ExecutePendingAction
+              logs around the timestamp.
+
+        # Expired-by-cron is operational — an approver was unreachable for
+        # the parking window. Page ops, not backend.
+        - alert: NexoraFourEyesExpiredByCron
+          expr: |
+            increase(
+              nexora_four_eyes_violations_total{reason="expired_by_cron"}[15m]
+            ) > 5
+          for: 5m
+          labels:
+            severity: warning
+            page: oncall-ops
+            runbook: nexora-docs/runbooks/four-eyes-stuck.md
+          annotations:
+            summary: "Four-eyes actions expiring unapproved on {{ $labels.service_name }}"
+            description: |
+              More than 5 pending actions expired without approver action in
+              the last 15 minutes. Check whether the second-approver rota is
+              staffed; the admin /pending-actions page should not be empty.
 
         - alert: NexoraFourEyesStuckQueue
           expr: |
@@ -58,7 +84,7 @@ spec:
           for: 1h
           labels:
             severity: warning
-            page: oncall-backend
+            page: oncall-ops
             runbook: nexora-docs/runbooks/four-eyes-stuck.md
           annotations:
             summary: "Four-eyes queue depth growing on {{ $labels.service_name }}"
@@ -66,3 +92,112 @@ spec:
               Net parked-but-not-executed-or-rejected rows is non-zero into
               the morning window — second approvers may be unreachable or
               the queue is blocked. Check the admin /pending-actions page.
+
+        # S14 W2 — step-up rejection rate. Elevated rate signals either a
+        # misconfigured admin acr claim mapping or a session-hijack attempt.
+        - alert: NexoraStepUpDeniedElevated
+          expr: |
+            sum by (service_name, reason) (
+              increase(nexora_step_up_denied_total[5m])
+            ) > 10
+          for: 2m
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/step-up-denied.md
+          annotations:
+            summary: "Step-up denials elevated on {{ $labels.service_name }} ({{ $labels.reason }})"
+            description: |
+              >10 admin commands rejected by the StepUp middleware in 5
+              minutes. acr_mismatch = Authentik IdP config drift;
+              no_auth_time = unexpected token shape; stale = admin
+              session timeout mis-set.
+
+    - name: nexora-queue-slo
+      interval: 30s
+      rules:
+        # S14 W2 — KYC review backlog SLA (72h per architecture.md).
+        - alert: NexoraKycReviewSlaBreach
+          expr: nexora_kyc_pending_age_max_hours > 72
+          for: 10m
+          labels:
+            severity: warning
+            page: oncall-ops
+            runbook: nexora-docs/runbooks/kyc-backlog.md
+          annotations:
+            summary: "KYC review SLA breached on {{ $labels.service_name }}"
+            description: |
+              Oldest KYC submission has been pending > 72 hours. SLA is
+              72h; either the reviewer team is short-handed or one
+              submission is stuck. Check /kyc?status=UnderReview.
+
+        # S14 W2 — payout settlement SLA (72h).
+        - alert: NexoraPayoutSettlementSlaBreach
+          expr: nexora_payout_pending_age_max_hours > 72
+          for: 10m
+          labels:
+            severity: warning
+            page: oncall-ops
+            runbook: nexora-docs/runbooks/payout-stuck.md
+          annotations:
+            summary: "Payout settlement SLA breached on {{ $labels.service_name }}"
+            description: |
+              Oldest Pending PayoutRequest is > 72 hours old. SLA is 72h
+              from accrual to bank-send. Check /transactions?status=Pending.
+
+        # If the QueueSloRefreshJob silently fails (W2.5), the gauges
+        # never advance — alert on stale data.
+        - alert: NexoraQueueSloDataStale
+          expr: |
+            time() - timestamp(nexora_kyc_pending_count) > 600
+          for: 5m
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/jobs-stuck.md
+          annotations:
+            summary: "Queue SLO data stale on {{ $labels.service_name }}"
+            description: |
+              QueueSloRefreshJob has not updated the SLO gauges for
+              > 10 minutes. The job runs every minute; check admin pod
+              logs for Quartz errors.
+
+    - name: nexora-aml
+      interval: 30s
+      rules:
+        # S14 W2 — AML provider error rate. Vendor outage / handler bug.
+        - alert: NexoraAmlProviderErrorsElevated
+          expr: |
+            sum by (service_name, provider) (
+              increase(nexora_aml_screening_calls_total{outcome=~"provider_error|transport_error"}[5m])
+            ) > 5
+          for: 2m
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/aml-outage.md
+          annotations:
+            summary: "AML provider {{ $labels.provider }} returning errors"
+            description: |
+              >5 AML screening calls failed in 5 minutes. Check the AML
+              provider status page + nexora_aml_screening_latency_ms
+              histogram for distribution.
+
+        - alert: NexoraAmlLatencyP95High
+          expr: |
+            histogram_quantile(0.95,
+              sum by (service_name, provider, le) (
+                rate(nexora_aml_screening_latency_ms_bucket[5m])
+              )
+            ) > 8000
+          for: 5m
+          labels:
+            severity: warning
+            page: oncall-backend
+            runbook: nexora-docs/runbooks/aml-outage.md
+          annotations:
+            summary: "AML p95 latency > 8s on {{ $labels.provider }}"
+            description: |
+              p95 latency of AML screening exceeded 8000ms over 5
+              minutes. KYC approvals will feel slow; check vendor
+              status, network egress, and ComplyAdvantage SLAs.
