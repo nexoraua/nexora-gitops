@@ -1,42 +1,27 @@
-# S14 Wave 1.9 — default-deny + explicit egress allowlist for
-# nexora-api and nexora-admin.
+# S14 Wave 1.9 — explicit egress allowlist for nexora-api and
+# nexora-admin (default-deny REMOVED after hotfix — see header below).
 #
-# These two namespaces touch customer money, so locking down lateral
-# movement + exfiltration surface is launch-relevant. Allowlist
-# specifically covers:
-#   - kube-dns (so service names resolve)
-#   - kube-apiserver (probes + init)
-#   - postgresql/cnpg business cluster on 5432
-#   - vault-system on 8200 (Transit KMS)
-#   - authentik on 9000 (OIDC discovery + token introspection)
-#   - monitoring/alloy on 4317 (OTLP)
-#   - external ComplyAdvantage AML provider via toFQDNs
+# HOTFIX 2026-06-18: the initial default-deny version of this file
+# broke admin OIDC discovery — the Authentik Authority URL
+# `https://auth.develop.nxua.dev/...` is a public Cloudflare-fronted
+# endpoint, NOT the internal `authentik:9000` Service. With default-
+# deny + no `toFQDNs` rule for auth.develop.nxua.dev the OIDC handler
+# timed out at 60s, ExceptionHandlerMiddleware fired, redirect
+# middleware tried to send the user back to /auth/login → infinite
+# loop → 405 at the edge. Pulling the default-deny stanzas restores
+# the running posture; the explicit allowlist below stays as
+# documentation + belt-and-braces.
 #
-# Ingress allowlist:
-#   - traefik namespace (HTTP traffic from public ingress)
-#   - monitoring (Prometheus / VMAgent scrape if it ever turns on)
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: nexora-api
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: nexora-admin
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
+# To re-introduce default-deny safely we need to:
+#   1. Add Cilium CNP with `toFQDNs: auth.develop.nxua.dev`
+#   2. Add Cilium CNP with `toFQDNs: api.complyadvantage.com`
+#   3. Add ALL outgoing FQDNs the app reaches (Vault if public,
+#      object-storage for DSR exports, etc.)
+#   4. Test on a single pod via `cilium policy trace` before applying.
+#
+# Until that's done, this file is permissive-by-default; the explicit
+# allowlists below add NOTHING when there is no deny baseline. Kept
+# for future re-enablement.
 ---
 # DNS — both namespaces, k8s NP form so Cilium honours it identically.
 apiVersion: networking.k8s.io/v1
