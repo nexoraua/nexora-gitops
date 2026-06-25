@@ -17,6 +17,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: vault-system
+  # The ExternalSecret CRD defaults these fields server-side; the git
+  # manifests omit them, which otherwise leaves every ExternalSecret
+  # perpetually OutOfSync (matches apps/bootstrap-secrets.yaml).
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.target.deletionPolicy
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
   syncPolicy:
     automated:
       prune: true
