@@ -202,3 +202,77 @@ spec:
             - name: tmp
               emptyDir:
                 sizeLimit: 1Gi
+---
+# The vault-system namespace runs default-deny-all. The vault-egress-*
+# / vault-api-ingress policies only select app.kubernetes.io/name=vault,
+# so without the two policies below the snapshot Job pod cannot resolve
+# DNS, reach the Vault service, or upload to Object Storage — the Job
+# fails at the snapshot call. (Missing from the original DR-readiness
+# commit; the Job never ran because the CronJob itself never deployed.)
+#
+# Egress for the snapshot pod: DNS (with Cilium DNS proxy rules so the
+# toFQDNs below can learn the Object Storage IP), the in-cluster Vault
+# service on 8200, and Hetzner OS on 443. Mirrors cnpg-egress-object-
+# storage (platform/network-policies/stateful-egress.yaml).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: vault-snapshot-egress
+  namespace: vault-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault-raft-snapshot
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: vault-system
+            app.kubernetes.io/name: vault
+      toPorts:
+        - ports:
+            - port: "8200"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: "fsn1.your-objectstorage.com"
+        - matchPattern: "*.fsn1.your-objectstorage.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Ingress on the Vault pods FROM the snapshot Job pod (same namespace).
+# vault-api-ingress only lists external client namespaces and vault-peer
+# only app=vault, so the snapshot pod's connection to vault:8200 would
+# otherwise be dropped. Additive to the existing vault ingress policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-ingress-from-snapshot
+  namespace: vault-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault-raft-snapshot
+      ports:
+        - port: 8200
+          protocol: TCP
