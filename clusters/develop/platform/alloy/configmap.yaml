@@ -260,6 +260,60 @@ data:
       forward_to = [prometheus.remote_write.vm.receiver]
     }
 
+    // ===================== KUBE-APISERVER ====================
+    // Self-metrics from the kube-apiserver. Scraped here (not via the
+    // chart's ServiceMonitor, which would need vmagent) so the GitOps
+    // vm-* apiserver rules — client-cert expiry, aggregated-API health,
+    // request error rates — evaluate against real data instead of an
+    // empty series. job="apiserver" matches the kube-prometheus rule
+    // convention those rules query (up{job="apiserver"}). Discovered via
+    // the default/kubernetes Endpoints (the real apiserver instance),
+    // scraped over the in-cluster TLS with the Alloy SA token; the
+    // alloy-node-metrics ClusterRole already grants nonResourceURL
+    // /metrics (see rbac.yaml).
+    discovery.kubernetes "apiserver" {
+      role = "endpoints"
+      // Only the default namespace holds the apiserver Endpoints — scope
+      // discovery there instead of listing/watching every Endpoints object.
+      namespaces {
+        names = ["default"]
+      }
+    }
+
+    discovery.relabel "apiserver" {
+      targets = discovery.kubernetes.apiserver.targets
+
+      // Keep only the default/kubernetes:https endpoints (the apiserver),
+      // dropping every other Service's endpoints the role discovers.
+      rule {
+        source_labels = [
+          "__meta_kubernetes_namespace",
+          "__meta_kubernetes_service_name",
+          "__meta_kubernetes_endpoint_port_name",
+        ]
+        regex  = "default;kubernetes;https"
+        action = "keep"
+      }
+      rule {
+        target_label = "job"
+        replacement  = "apiserver"
+      }
+    }
+
+    prometheus.scrape "apiserver" {
+      targets           = discovery.relabel.apiserver.output
+      scheme            = "https"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      // Unlike the per-node kubelet serving cert, the apiserver cert carries
+      // the kubernetes.default.svc SAN, so verify it properly (server_name +
+      // the cluster CA) rather than skipping verification.
+      tls_config {
+        ca_file     = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        server_name = "kubernetes.default.svc"
+      }
+      forward_to = [prometheus.remote_write.vm.receiver]
+    }
+
     // ===================== OTLP INGEST (apps) ==================
     otelcol.receiver.otlp "default" {
       grpc {
