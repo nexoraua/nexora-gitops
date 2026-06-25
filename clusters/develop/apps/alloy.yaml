@@ -49,9 +49,12 @@ spec:
             resources:
               requests:
                 cpu: 100m
-                memory: 128Mi
+                memory: 256Mi
+              # 512Mi was tight for the grown cluster (many pod-log streams)
+              # and OOM'd under an apiserver scrape; 768Mi gives headroom for
+              # the restart log-backfill spike.
               limits:
-                memory: 512Mi
+                memory: 768Mi
           crds:
             create: false
     - repoURL: https://github.com/nexoraua/nexora-gitops.git
