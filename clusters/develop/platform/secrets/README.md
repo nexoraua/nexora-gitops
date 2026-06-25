@@ -398,9 +398,11 @@ backup-ів.
 **Token creation** (after Vault is bootstrapped):
 
 ```bash
-# Створи policy
+# Створи policy. /sys/storage/raft/snapshot — sudo-protected path: знаття
+# снапшоту вимагає І read, І sudo. Лише read → CronJob дістає HTTP 403
+# (алерт VaultSnapshotCronJobMissing гасне, але бекапи не знімаються).
 vault policy write vault-snapshot - <<EOF
-path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+path "sys/storage/raft/snapshot" { capabilities = ["read", "sudo"] }
 EOF
 
 # Periodic token (TTL 30d, renewable, prefixed для розпізнавання)
