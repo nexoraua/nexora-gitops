@@ -272,12 +272,11 @@ data:
     // alloy-node-metrics ClusterRole already grants nonResourceURL
     // /metrics (see rbac.yaml).
     discovery.kubernetes "apiserver" {
+      // Cluster-wide endpoints discovery; the keep-rule below isolates the
+      // single default/kubernetes:https endpoint. (A namespaces{names=...}
+      // scope yielded zero discovered targets on Alloy v1.4.3, so rely on
+      // the relabel keep instead.)
       role = "endpoints"
-      // Only the default namespace holds the apiserver Endpoints — scope
-      // discovery there instead of listing/watching every Endpoints object.
-      namespaces {
-        names = ["default"]
-      }
     }
 
     discovery.relabel "apiserver" {
