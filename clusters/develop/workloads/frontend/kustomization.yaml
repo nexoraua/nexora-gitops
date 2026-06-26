@@ -13,6 +13,6 @@ images:
 - digest: sha256:5c3848625f3e1bb1ffc9c4043d110fdcd6600a7da6ff6ca89136a0311e9e3f31
   name: ghcr.io/nexoraua/nexora-frontend
   newName: ghcr.io/nexoraua/nexora-frontend
-  newTag: sha-5da90672268e
+  newTag: sha-8bf12e7693b3
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
