@@ -17,8 +17,9 @@ spec:
       kind: Rule
       priority: 100
       middlewares:
+        # Same-namespace ref (defined below). Traefik has no allowCrossNamespace,
+        # so a `namespace: traefik` ref is rejected and the whole router 404s.
         - name: rate-limit-api
-          namespace: traefik
       services:
         - name: nexora-api
           port: 80
@@ -39,3 +40,20 @@ spec:
     - api.develop.nxua.dev
   duration: 2160h
   renewBefore: 360h
+---
+# Edge rate limit for the public API. Defined in the api workload namespace
+# (nexora-api) and referenced same-namespace by the IngressRoute above — the
+# shared traefik/-namespaced copy is unusable (not deployed there, and Traefik
+# has no allowCrossNamespace). Mirrors the frontend/admin secure-headers pattern.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-api
+spec:
+  rateLimit:
+    average: 30
+    burst: 60
+    period: 1s
+    sourceCriterion:
+      ipStrategy:
+        depth: 1
